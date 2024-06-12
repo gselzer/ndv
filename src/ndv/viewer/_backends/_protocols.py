@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -22,10 +23,36 @@ class PImageHandle(Protocol):
     @clim.setter
     def clim(self, clims: tuple[float, float]) -> None: ...
     @property
-    def cmap(self) -> Any: ...
+    def cmap(self) -> cmap.Colormap: ...
     @cmap.setter
-    def cmap(self, cmap: Any) -> None: ...
+    def cmap(self, cmap: cmap.Colormap) -> None: ...
     def remove(self) -> None: ...
+
+
+class PRoiHandle(Protocol):
+    @property
+    def vertices(self) -> list[tuple[float, float]]: ...
+    @vertices.setter
+    def vertices(self, data: list[tuple[float, float]]) -> None: ...
+    @property
+    def visible(self) -> bool: ...
+    @visible.setter
+    def visible(self, visible: bool) -> None: ...
+    @property
+    def color(self) -> Any: ...
+    @color.setter
+    def color(self, color: cmap.Color) -> None: ...
+    @property
+    def border_color(self) -> Any: ...
+    @border_color.setter
+    def border_color(self, color: cmap.Color) -> None: ...
+    def remove(self) -> None: ...
+
+
+# TODO: Are there better names?
+class CanvasMode(Enum):
+    PAN_ZOOM = "pan & zoom"
+    EDIT_ROI = "edit ROI"
 
 
 class PCanvas(Protocol):
@@ -46,8 +73,17 @@ class PCanvas(Protocol):
     def add_volume(
         self, data: np.ndarray | None = ..., cmap: cmap.Colormap | None = ...
     ) -> PImageHandle: ...
-
     def canvas_to_world(
         self, pos_xy: tuple[float, float]
     ) -> tuple[float, float, float]:
         """Map XY canvas position (pixels) to XYZ coordinate in world space."""
+    def add_roi(
+        self,
+        vertices: list[tuple[float, float]] | None = ...,
+        color: Any = ...,
+        border_color: Any | None = ...,
+    ) -> PRoiHandle: ...
+    def set_mode(
+        self,
+        mode: CanvasMode,
+    ) -> None: ...
