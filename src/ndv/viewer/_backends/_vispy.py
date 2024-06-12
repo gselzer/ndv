@@ -295,7 +295,10 @@ class VispyRoiHandle:
     def color(self, color: cmap.Color | None = None) -> None:
         if color is None:
             color = cmap.Color("transparent")
-        self._roi.polygon.color = Color(color.hex, alpha=color.alpha)
+        # NB: To enable dragging the shape within the border,
+        # we require a positive alpha.
+        alpha = max(color.alpha, 1e-6)
+        self._roi.polygon.color = Color(color.hex, alpha=alpha)
 
     @property
     def border_color(self) -> Any:
