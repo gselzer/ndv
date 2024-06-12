@@ -64,6 +64,46 @@ class PyGFXImageHandle:
             par.remove(self._image)
 
 
+class PyGFXRoiHandle:
+    def __init__(self) -> None:
+        raise NotImplementedError()
+
+    @property
+    def vertices(self) -> list[tuple[float, float]]:
+        raise NotImplementedError()
+
+    @vertices.setter
+    def vertices(self, data: list[tuple[float, float]]) -> None:
+        raise NotImplementedError()
+
+    @property
+    def visible(self) -> bool:
+        raise NotImplementedError()
+
+    @visible.setter
+    def visible(self, visible: bool) -> None:
+        raise NotImplementedError()
+
+    @property
+    def color(self) -> Any:
+        raise NotImplementedError()
+
+    @color.setter
+    def color(self, color: cmap.Color | None = None) -> None:
+        raise NotImplementedError()
+
+    @property
+    def border_color(self) -> Any:
+        raise NotImplementedError()
+
+    @border_color.setter
+    def border_color(self, color: cmap.Color | None = None) -> None:
+        raise NotImplementedError()
+
+    def remove(self) -> None:
+        raise NotImplementedError()
+
+
 class _QWgpuCanvas(QWgpuCanvas):
     def sizeHint(self) -> QSize:
         return QSize(512, 512)
@@ -176,6 +216,14 @@ class PyGFXViewerCanvas:
         if cmap is not None:
             handle.cmap = cmap
         return handle
+
+    def add_polygon(
+        self,
+        vertices: list[tuple[float, float]] | None = ...,
+        color: cmap.Color | None = ...,
+        border_color: cmap.Color | None = ...,
+    ) -> PyGFXRoiHandle:
+        raise NotImplementedError()
 
     def set_range(
         self,
