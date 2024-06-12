@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import cmap
 import numpy as np
-from qtpy.QtCore import QEvent
+from qtpy.QtCore import Qt, QEvent
 from qtpy.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from superqt import QCollapsible, QElidingLabel, QIconifyIcon, ensure_main_thread
 from superqt.utils import qthrottled, signals_blocked
@@ -16,9 +16,11 @@ from ndv.viewer._components import (
     ChannelModeButton,
     DimToggleButton,
     QSpinner,
+    ROIButton,
 )
 
 from ._backends import get_canvas_class
+from ._backends._protocols import CanvasMode
 from ._data_wrapper import DataWrapper
 from ._dims_slider import DimsSliders
 from ._lut_control import LutControl
@@ -28,9 +30,9 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Hashable, Iterable, Sequence, TypeAlias
 
     from qtpy.QtCore import QObject, QPointF
-    from qtpy.QtGui import QCloseEvent, QMouseEvent
+    from qtpy.QtGui import QCloseEvent, QKeyEvent, QMouseEvent
 
-    from ._backends._protocols import PCanvas, PImageHandle
+    from ._backends._protocols import PCanvas, PImageHandle, PRoiHandle
     from ._dims_slider import DimKey, Indices, Sizes
 
     ImgKey: TypeAlias = Hashable
@@ -143,6 +145,11 @@ class NDViewer(QWidget):
         # number of dimensions to display
         self._ndims: Literal[2, 3] = 2
 
+        # ROI selection
+        self._roi: PRoiHandle | None = None
+        # Current mode
+        self._mode: CanvasMode = CanvasMode.PAN_ZOOM
+
         # WIDGETS ----------------------------------------------------
 
         # the button that controls the display mode of the channels
@@ -153,6 +160,9 @@ class NDViewer(QWidget):
             QIconifyIcon("fluent:full-screen-maximize-24-filled"), "", self
         )
         self._set_range_btn.clicked.connect(self._on_set_range_clicked)
+        # button to draw ROIs
+        self._add_roi_btn = ROIButton()
+        self._add_roi_btn.toggled.connect(self._on_add_roi_clicked)
 
         # button to change number of displayed dimensions
         self._ndims_btn = DimToggleButton(self)
@@ -177,6 +187,14 @@ class NDViewer(QWidget):
         self._dims_sliders.valueChanged.connect(
             qthrottled(self._update_data_for_index, 20, leading=True)
         )
+        # TODO - there HAS to be a better way to do this...
+        self._canvas.qwidget().mouseReleaseEvent = self._wrap_canvas_mouse_release(
+            self._canvas.qwidget().mouseReleaseEvent
+        )
+        # FIXME - vispy likes to eat all the key presses
+        # self._canvas.qwidget().keyPressEvent = self._wrap_canvas_key_press(
+        #     self._canvas.qwidget().keyPressEvent
+        # )
 
         self._lut_drop = QCollapsible("LUTs", self)
         self._lut_drop.setCollapsedIcon(QIconifyIcon("bi:chevron-down", color=MID_GRAY))
@@ -200,6 +218,7 @@ class NDViewer(QWidget):
         btns.addWidget(self._channel_mode_btn)
         btns.addWidget(self._ndims_btn)
         btns.addWidget(self._set_range_btn)
+        btns.addWidget(self._add_roi_btn)
 
         info_widget = QWidget()
         info = QHBoxLayout(info_widget)
@@ -289,6 +308,32 @@ class NDViewer(QWidget):
         self.set_current_index(idx)
         # update the data info label
         self._data_info_label.setText(self._data_wrapper.summary_info())
+
+    def set_roi(
+        self,
+        vertices: list[tuple[float, float]] | None = None,
+        color: Any = None,
+        border_color: Any = None,
+    ) -> None:
+        """Set the properties of the ROI overlaid on the displayed data.
+
+        Properties
+        ----------
+        vertices : list[tuple[float, float]] | None
+            The vertices of the ROI.
+        color : str, tuple, list, array, Color, or int
+            The fill color.  Can be any "ColorLike".
+        border_color : str, tuple, list, array, Color, or int
+            The border color.  Can be any "ColorLike".
+        """
+        # Remove the old ROI
+        if self._roi is not None:
+            self._roi.remove()
+
+        # TODO: Should we return the handle? We don't expose protocols yet
+        self._roi = self._canvas.add_roi(
+            vertices=vertices, color=color, border_color=border_color
+        )
 
     def set_visualized_dims(self, dims: Iterable[DimKey]) -> None:
         """Set the dimensions that will be visualized.
@@ -383,6 +428,11 @@ class NDViewer(QWidget):
     def _toggle_3d(self) -> None:
         self.set_ndim(3 if self._ndims == 2 else 2)
 
+        # Disable ROIs in 3D (for now)
+        self._add_roi_btn.setEnabled(self._ndims == 2)
+        if self._roi is not None:
+            self._roi.visible = self._ndims == 2
+
     def _update_slider_ranges(self) -> None:
         """Set the maximum values of the sliders.
 
@@ -398,6 +448,17 @@ class NDViewer(QWidget):
     def _on_set_range_clicked(self) -> None:
         # using method to swallow the parameter passed by _set_range_btn.clicked
         self._canvas.set_range()
+
+    def _on_add_roi_clicked(self, checked: bool) -> None:
+        if checked:
+            # Disable canvas pan/zoom while dragging roi
+            self._mode = CanvasMode.EDIT_ROI
+            # Add new roi
+            self.set_roi()
+        else:
+            # Enable canvas pan/zoom when done
+            self._mode = CanvasMode.PAN_ZOOM
+        self._canvas.set_mode(self._mode)
 
     def _image_key(self, index: Indices) -> ImgKey:
         """Return the key for image handle(s) corresponding to `index`."""
@@ -597,3 +658,31 @@ class NDViewer(QWidget):
                 break  # only getting one handle per channel
             text += ",".join(channels)
         self._hover_info_label.setText(text)
+
+    def keyPressEvent(self, a0: QKeyEvent) -> None:
+        if a0.key() == Qt.Key_Delete and self._roi is not None:
+            self._roi.remove()
+            self._roi = None
+
+    def _wrap_canvas_mouse_release(
+        self, old_method: Callable[[QMouseEvent], None]
+    ) -> Callable[[QMouseEvent], None]:
+        def new_release(event: QMouseEvent) -> None:
+            # If in EDIT_ROI mode, a release should untoggle the ROI button
+            if self._mode is CanvasMode.EDIT_ROI:
+                self._add_roi_btn.click()
+            # Proceed with normal mouse release
+            return old_method(event)
+
+        return new_release
+
+    def _wrap_canvas_key_press(
+        self, old_method: Callable[[QMouseEvent], None]
+    ) -> Callable[[QMouseEvent], None]:
+        def new_key_press(event: QMouseEvent) -> None:
+            # If in EDIT_ROI mode, a release should untoggle the ROI button
+            self.keyPressEvent(event)
+            # Proceed with normal mouse release
+            return old_method(event)
+
+        return new_key_press
