@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from concurrent.futures import Future
     from typing import Any, Callable, Hashable, Iterable, Sequence, TypeAlias
 
-    from qtpy.QtGui import QCloseEvent, QMouseEvent
+    from qtpy.QtGui import QCloseEvent, QKeyEvent, QMouseEvent
 
     from ._backends._protocols import PCanvas, PImageHandle, PRoiHandle
     from ._dims_slider import DimKey, Indices, Sizes
@@ -144,7 +144,7 @@ class NDViewer(QWidget):
         self._ndims: Literal[2, 3] = 2
 
         # ROI selection
-        self._rois: list[PRoiHandle] = []
+        self._roi: PRoiHandle | None = None
         # Current mode
         self._mode: CanvasMode = CanvasMode.PAN_ZOOM
 
@@ -185,6 +185,7 @@ class NDViewer(QWidget):
         self._canvas.qwidget().mouseReleaseEvent = self._wrap_canvas_mouse_release(
             self._canvas.qwidget().mouseReleaseEvent
         )
+        # self._canvas.qwidget().keyPressEvent = self.keyPressEvent
 
         self._lut_drop = QCollapsible("LUTs", self)
         self._lut_drop.setCollapsedIcon(QIconifyIcon("bi:chevron-down", color=MID_GRAY))
@@ -296,6 +297,30 @@ class NDViewer(QWidget):
         self.set_current_index(idx)
         # update the data info label
         self._data_info_label.setText(self._data_wrapper.summary_info())
+
+    def add_roi(
+        self,
+        vertices: list[tuple[float, float]] | None = None,
+        color: cmap.Color | None = None,
+        border_color: cmap.Color | None = None,
+    ) -> None:
+        """Set the datastore, and, optionally, the sizes of the data.
+
+        Properties
+        ----------
+        vertices : list[tuple[float, float]] | None
+            The vertices of the ROI, listed in
+        initial_index : Indices | None
+            The initial index to display.  This is a mapping of dimensions to integers
+            or slices that define the slice of the data to display.  If not provided,
+            the initial index will be set to the middle of the data.
+        """
+        if self._roi is not None:
+            self._roi.remove()
+        # TODO: Should we return the handle? We don't expose protocols yet
+        self._roi = self._canvas.add_polygon(
+            vertices=vertices, color=color, border_color=border_color
+        )
 
     def set_visualized_dims(self, dims: Iterable[DimKey]) -> None:
         """Set the dimensions that will be visualized.
@@ -411,7 +436,7 @@ class NDViewer(QWidget):
             # Disable canvas pan/zoom while dragging roi
             self._mode = CanvasMode.EDIT_ROI
             # Add new roi
-            self._rois.append(self._canvas.add_polygon())
+            self.add_roi()
         else:
             # Enable canvas pan/zoom when done
             self._mode = CanvasMode.PAN_ZOOM
@@ -461,6 +486,12 @@ class NDViewer(QWidget):
 
         self._progress_spinner.show()
         f.add_done_callback(self._on_data_slice_ready)
+
+    def keyPressEvent(self, a0: QKeyEvent) -> None:
+        print(a0.key())
+        # if a0.key() is Qt.Key_Delete and self._roi is not None:
+        #     self._roi.remove()
+        #     self._roi = None
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
         if self._last_future is not None:
