@@ -15,9 +15,11 @@ from ndv.viewer._components import (
     ChannelModeButton,
     DimToggleButton,
     QSpinner,
+    ROIButton,
 )
 
 from ._backends import get_canvas
+from ._backends._protocols import CanvasMode
 from ._data_wrapper import DataWrapper
 from ._dims_slider import DimsSliders
 from ._lut_control import LutControl
@@ -26,9 +28,9 @@ if TYPE_CHECKING:
     from concurrent.futures import Future
     from typing import Any, Callable, Hashable, Iterable, Sequence, TypeAlias
 
-    from qtpy.QtGui import QCloseEvent
+    from qtpy.QtGui import QCloseEvent, QMouseEvent
 
-    from ._backends._protocols import PCanvas, PImageHandle
+    from ._backends._protocols import PCanvas, PImageHandle, PRoiHandle
     from ._dims_slider import DimKey, Indices, Sizes
 
     ImgKey: TypeAlias = Hashable
@@ -141,6 +143,11 @@ class NDViewer(QWidget):
         # number of dimensions to display
         self._ndims: Literal[2, 3] = 2
 
+        # ROI selection
+        self._rois: list[PRoiHandle] = []
+        # Current mode
+        self._mode: CanvasMode = CanvasMode.PAN_ZOOM
+
         # WIDGETS ----------------------------------------------------
 
         # the button that controls the display mode of the channels
@@ -151,6 +158,9 @@ class NDViewer(QWidget):
             QIconifyIcon("fluent:full-screen-maximize-24-filled"), "", self
         )
         self._set_range_btn.clicked.connect(self._on_set_range_clicked)
+        # button to draw ROIs
+        self._add_roi_btn = ROIButton()
+        self._add_roi_btn.toggled.connect(self._on_add_roi_clicked)
 
         # button to change number of displayed dimensions
         self._ndims_btn = DimToggleButton(self)
@@ -170,6 +180,10 @@ class NDViewer(QWidget):
         self._dims_sliders = DimsSliders(self)
         self._dims_sliders.valueChanged.connect(
             qthrottled(self._update_data_for_index, 20, leading=True)
+        )
+        # TODO - there HAS to be a better way to do this...
+        self._canvas.qwidget().mouseReleaseEvent = self._wrap_canvas_mouse_release(
+            self._canvas.qwidget().mouseReleaseEvent
         )
 
         self._lut_drop = QCollapsible("LUTs", self)
@@ -194,6 +208,7 @@ class NDViewer(QWidget):
         btns.addWidget(self._channel_mode_btn)
         btns.addWidget(self._ndims_btn)
         btns.addWidget(self._set_range_btn)
+        btns.addWidget(self._add_roi_btn)
 
         info = QHBoxLayout()
         info.setContentsMargins(0, 0, 0, 2)
@@ -391,6 +406,17 @@ class NDViewer(QWidget):
         # using method to swallow the parameter passed by _set_range_btn.clicked
         self._canvas.set_range()
 
+    def _on_add_roi_clicked(self, checked: bool) -> None:
+        if checked:
+            # Disable canvas pan/zoom while dragging roi
+            self._mode = CanvasMode.EDIT_ROI
+            # Add new roi
+            self._rois.append(self._canvas.add_polygon())
+        else:
+            # Enable canvas pan/zoom when done
+            self._mode = CanvasMode.PAN_ZOOM
+        self._canvas.set_mode(self._mode)
+
     def _image_key(self, index: Indices) -> ImgKey:
         """Return the key for image handle(s) corresponding to `index`."""
         if self._channel_mode == ChannelMode.COMPOSITE:
@@ -541,3 +567,15 @@ class NDViewer(QWidget):
     def _is_idle(self) -> bool:
         """Return True if no futures are running. Used for testing, and debugging."""
         return self._last_future is None
+
+    def _wrap_canvas_mouse_release(
+        self, old_method: Callable[[QMouseEvent], None]
+    ) -> Callable[[QMouseEvent], None]:
+        def new_release(event: QMouseEvent) -> None:
+            # If in EDIT_ROI mode, a release should untoggle the ROI button
+            if self._mode is CanvasMode.EDIT_ROI:
+                self._add_roi_btn.click()
+            # Proceed with normal mouse release
+            return old_method(event)
+
+        return new_release
