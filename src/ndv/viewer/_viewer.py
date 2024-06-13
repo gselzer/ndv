@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import cmap
 import numpy as np
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from superqt import QCollapsible, QElidingLabel, QIconifyIcon, ensure_main_thread
 from superqt.utils import qthrottled, signals_blocked
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from concurrent.futures import Future
     from typing import Any, Callable, Hashable, Iterable, Sequence, TypeAlias
 
-    from qtpy.QtGui import QCloseEvent, QMouseEvent
+    from qtpy.QtGui import QCloseEvent, QKeyEvent, QMouseEvent
 
     from ._backends._protocols import PCanvas, PImageHandle, PRoiHandle
     from ._dims_slider import DimKey, Indices, Sizes
@@ -185,6 +186,10 @@ class NDViewer(QWidget):
         self._canvas.qwidget().mouseReleaseEvent = self._wrap_canvas_mouse_release(
             self._canvas.qwidget().mouseReleaseEvent
         )
+        # FIXME - vispy likes to eat all the key presses
+        # self._canvas.qwidget().keyPressEvent = self._wrap_canvas_key_press(
+        #     self._canvas.qwidget().keyPressEvent
+        # )
 
         self._lut_drop = QCollapsible("LUTs", self)
         self._lut_drop.setCollapsedIcon(QIconifyIcon("bi:chevron-down", color=MID_GRAY))
@@ -594,6 +599,11 @@ class NDViewer(QWidget):
         """Return True if no futures are running. Used for testing, and debugging."""
         return self._last_future is None
 
+    def keyPressEvent(self, a0: QKeyEvent) -> None:
+        if a0.key() == Qt.Key_Delete and self._roi is not None:
+            self._roi.remove()
+            self._roi = None
+
     def _wrap_canvas_mouse_release(
         self, old_method: Callable[[QMouseEvent], None]
     ) -> Callable[[QMouseEvent], None]:
@@ -605,3 +615,14 @@ class NDViewer(QWidget):
             return old_method(event)
 
         return new_release
+
+    def _wrap_canvas_key_press(
+        self, old_method: Callable[[QMouseEvent], None]
+    ) -> Callable[[QMouseEvent], None]:
+        def new_key_press(event: QMouseEvent) -> None:
+            # If in EDIT_ROI mode, a release should untoggle the ROI button
+            self.keyPressEvent(event)
+            # Proceed with normal mouse release
+            return old_method(event)
+
+        return new_key_press
