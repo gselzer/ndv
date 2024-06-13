@@ -421,6 +421,11 @@ class NDViewer(QWidget):
     def _toggle_3d(self) -> None:
         self.set_ndim(3 if self._ndims == 2 else 2)
 
+        # Disable ROIs in 3D (for now)
+        self._add_roi_btn.setEnabled(self._ndims == 2)
+        if self._roi is not None:
+            self._roi.visible = self._ndims == 2
+
     def _update_slider_ranges(self) -> None:
         """Set the maximum values of the sliders.
 
