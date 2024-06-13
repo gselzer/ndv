@@ -25,157 +25,170 @@ turn = np.sin(np.pi / 4)
 DEFAULT_QUATERNION = Quaternion(turn, turn, 0, 0)
 
 
-class ControlPoints(scene.visuals.Compound):
-    def __init__(self, parent: scene.visuals.Visual) -> None:
-        scene.visuals.Compound.__init__(self, [])
+class ROIElement:
+    def select(self, visible: bool) -> None:
+        raise NotImplementedError("Must be implemented in subclass")
+
+    def start_move(self, event: SceneMouseEvent) -> None:
+        raise NotImplementedError("Must be implemented in subclass")
+
+    def move(self, pos: list[float]) -> None:
+        raise NotImplementedError("Must be implemented in subclass")
+
+    def cursor_pref(self) -> Qt.CursorShape:
+        return None
+
+
+class Handle(scene.visuals.Markers, ROIElement):
+    """A draggable Marker that is part of a ROI."""
+
+    default_cursor_pref: Callable[[list[float]], Qt.CursorShape] = (
+        lambda _: Qt.SizeAllCursor
+    )
+
+    def __init__(
+        self, parent: EditableROI, on_move: Callable[[list[float]], None] | None = None
+    ) -> None:
+        super().__init__(parent=parent)
         self.unfreeze()
         self.parent = parent
-        self._top = 0.0
-        self._bottom = 0.0
-        self._left = 0.0
-        self._right = 0.0
-        self.selected_idx: int | None = None
-        self.opposed_idx: int | None = None
-
-        self.control_points = [scene.visuals.Markers(parent=self) for i in range(0, 4)]
-        for c in self.control_points:
-            c.set_data(
-                pos=np.array([[0, 0]], dtype=np.float32),
-                symbol="s",
-                edge_color="red",
-                size=6,
-            )
-            c.interactive = True
+        # Callback function(s)
+        self.on_move: list[Callable[[list[float]], None]] = []
+        if on_move:
+            self.on_move.append(on_move)
+        self._cursor_pref: Callable[[list[float]], Qt.CursorShape] = (
+            self.default_cursor_pref
+        )
+        # NB VisPy asks that the data is a 2D array
+        self._pos = np.array([[0, 0]], dtype=np.float32)
+        self.interactive = True
         self.freeze()
 
-    def update_bounds(self) -> None:
-        self._left = self.parent.bounds(0)[0]
-        self._right = self.parent.bounds(0)[1]
-        self._bottom = self.parent.bounds(1)[0]
-        self._top = self.parent.bounds(1)[1]
-        self.update_points()
-
-    def update_points(self) -> None:
-        self.control_points[0].set_data(pos=np.array([[self._left, self._top]]))
-        self.control_points[1].set_data(pos=np.array([[self._right, self._top]]))
-        self.control_points[2].set_data(pos=np.array([[self._right, self._bottom]]))
-        self.control_points[3].set_data(pos=np.array([[self._left, self._bottom]]))
-
-    def select(self, val: bool, obj: scene.visuals.Visual | None = None) -> None:
-        self.visible(val)
-        self.selected_idx = None
-        self.opposed_idx = None
-
-        if obj is not None:
-            n_cp = len(self.control_points)
-            for i in range(0, n_cp):
-                c = self.control_points[i]
-                if c == obj:
-                    self.selected_idx = i
-                    self.opposed_idx = int(i + n_cp / 2) % n_cp
-
-    def start_move(self, pos: list[float]) -> None:
+    def start_move(self, event: SceneMouseEvent) -> None:
         pass
 
     def move(self, pos: list[float]) -> None:
-        if self.selected_idx in [0, 3]:
-            self._left = pos[0]
-        else:
-            self._right = pos[0]
-        if self.selected_idx in [0, 1]:
-            self._top = pos[1]
-        else:
-            self._bottom = pos[1]
-
-        self.update_points()
-        self.parent.update_from_controlpoints()
+        for func in self.on_move:
+            func(pos)
 
     @property
-    def _width(self) -> float:
-        return abs(self._left - self._right)
+    def pos(self) -> list[float]:
+        return cast(list[float], self._pos[0, :])
 
-    @property
-    def _height(self) -> float:
-        return abs(self._top - self._bottom)
+    @pos.setter
+    def pos(self, pos: list[float]) -> None:
+        self._pos[:] = pos
+        self.set_data(self._pos)
 
-    def visible(self, v: bool) -> None:
-        for c in self.control_points:
-            c.visible = v
+    def select(self, visible: bool) -> None:
+        self.parent.select(visible)
 
-    def get_center(self) -> list[float]:
-        return [0.5 * (self._left + self._right), 0.5 * (self._bottom + self._top)]
-
-    def set_center(self, val: list[float]) -> None:
-        # Translate rectangle
-        center = self.get_center()
-        dx = val[0] - center[0]
-        self._left += dx
-        self._right += dx
-        dy = val[1] - center[1]
-        self._bottom += dy
-        self._top += dy
-        self.update_points()
+    def cursor_pref(self) -> Qt.CursorShape:
+        return self._cursor_pref(list(self.pos))
 
 
-class EditRectVisual(scene.visuals.Compound):
+class EditableROI(scene.visuals.Polygon, ROIElement):
+    def vertices(self) -> list[list[float]]:
+        raise NotImplementedError("Must be implemented in subclass")
+
+    def select(self, visible: bool) -> None:
+        raise NotImplementedError("Must be implemented in subclass")
+
+
+class RectangularROI(scene.visuals.Rectangle, EditableROI):
     def __init__(
         self,
+        parent: scene.visuals.Visual,
         center: list[float] | None = None,
-        width: float = 20,
-        height: float = 20,
-        parent: scene.visuals.Visual | None = None,
+        width: float = 1e-6,
+        height: float = 1e-6,
     ) -> None:
         if center is None:
             center = [0, 0]
-        super().__init__([], parent=parent)
-        self.unfreeze()
-
-        # Define roi
-        self.roi = scene.visuals.Rectangle(
-            center=center, width=width, height=height, radius=0, parent=self
+        scene.visuals.Rectangle.__init__(
+            self, center=center, width=width, height=height, radius=0, parent=parent
         )
-        self.roi.interactive = True
-        self.add_subvisual(self.roi)
+        self.unfreeze()
+        self.parent = parent
+        self.interactive = True
 
-        # Define control points
-        self.control_points = ControlPoints(parent=self)
-        self.control_points.update_bounds()
-        self.control_points.visible(False)
-
-        # drag_reference defines the
-        self.drag_reference = [0.0, 0.0]
-        self.freeze()
-
-    def select(self, val: bool, obj: scene.visuals.Visual | None = None) -> None:
-        self.control_points.visible(val)
-
-    def start_move(self, offset: list[float]) -> None:
-        center = self.center
-        self.drag_reference = [
-            offset[0] - center[0],
-            offset[1] - center[1],
+        self._handles = [
+            Handle(self, on_move=self.move_top_left),
+            Handle(self, on_move=self.move_top_right),
+            Handle(self, on_move=self.move_bottom_right),
+            Handle(self, on_move=self.move_bottom_left),
         ]
 
+        for h in self._handles:
+            h._cursor_pref = self._handle_cursor_pref
+
+        # drag_reference defines the offset between where the user clicks and the center
+        # of the rectangle
+        self.drag_reference = [0.0, 0.0]
+        self.interactive = True
+        self.freeze()
+
+    def _handle_cursor_pref(self, handle_pos: list[float]) -> Qt.CursorShape:
+        if handle_pos[0] < self.center[0] and handle_pos[1] < self.center[1]:
+            return Qt.SizeFDiagCursor
+        if handle_pos[0] > self.center[0] and handle_pos[1] > self.center[1]:
+            return Qt.SizeFDiagCursor
+        return Qt.SizeBDiagCursor
+
+    def move_top_left(self, pos: list[float]) -> None:
+        self._handles[3].pos = [pos[0], self._handles[3].pos[1]]
+        self._handles[0].pos = pos
+        self._handles[1].pos = [self._handles[1].pos[0], pos[1]]
+        self.redraw()
+
+    def move_top_right(self, pos: list[float]) -> None:
+        self._handles[0].pos = [self._handles[0].pos[0], pos[1]]
+        self._handles[1].pos = pos
+        self._handles[2].pos = [pos[0], self._handles[2].pos[1]]
+        self.redraw()
+
+    def move_bottom_right(self, pos: list[float]) -> None:
+        self._handles[1].pos = [pos[0], self._handles[1].pos[1]]
+        self._handles[2].pos = pos
+        self._handles[3].pos = [self._handles[3].pos[0], pos[1]]
+        self.redraw()
+
+    def move_bottom_left(self, pos: list[float]) -> None:
+        self._handles[2].pos = [self._handles[2].pos[0], pos[1]]
+        self._handles[3].pos = pos
+        self._handles[0].pos = [pos[0], self._handles[0].pos[1]]
+        self.redraw()
+
+    def cursor_pref(self) -> Qt.CursorShape:
+        return Qt.SizeAllCursor
+
+    def start_move(self, pos: list[float]) -> None:
+        self.drag_reference = [
+            pos[0] - self.center[0],
+            pos[1] - self.center[1],
+        ]
+
+    def redraw(self) -> None:
+        left, top, *_ = self._handles[0].pos
+        right, bottom, *_ = self._handles[2].pos
+
+        self.center = [(left + right) / 2, (top + bottom) / 2]
+        self.width = max(abs(left - right), 1e-6)
+        self.height = max(abs(top - bottom), 1e-6)
+
     def move(self, pos: list[float]) -> None:
-        shift = [
+        new_center = [
             pos[0] - self.drag_reference[0],
             pos[1] - self.drag_reference[1],
         ]
-        self.center = shift
+        old_center = self.center
+        for h in self._handles:
+            h.pos += [new_center[0] - old_center[0], new_center[1] - old_center[1]]
+        self.center = new_center
 
-    def update_from_controlpoints(self) -> None:
-        self.roi.center = self.control_points.get_center()
-        self.roi.width = abs(self.control_points._width)
-        self.roi.height = abs(self.control_points._height)
-
-    @property
-    def center(self) -> list[float]:
-        return self.control_points.get_center()
-
-    @center.setter
-    def center(self, val: list[float]) -> None:
-        self.control_points.set_center(val[0:2])
-        self.roi.center = val[0:2]
+    def select(self, visible: bool) -> None:
+        for h in self._handles:
+            h.visible = visible
 
 
 class VispyImageHandle:
@@ -240,7 +253,7 @@ class VispyImageHandle:
 
 
 class VispyRoiHandle:
-    def __init__(self, roi: EditRectVisual) -> None:
+    def __init__(self, roi: EditableROI) -> None:
         self._roi = roi
 
     @property
@@ -289,7 +302,7 @@ class VispyRoiHandle:
 
     @property
     def color(self) -> Any:
-        return self._roi.roi.color
+        return self._roi.color
 
     @color.setter
     def color(self, color: cmap.Color | None = None) -> None:
@@ -298,17 +311,20 @@ class VispyRoiHandle:
         # NB: To enable dragging the shape within the border,
         # we require a positive alpha.
         alpha = max(color.alpha, 1e-6)
-        self._roi.roi.color = Color(color.hex, alpha=alpha)
+        # FIXME add field to EditableROI?
+        self._roi.color = Color(color.hex, alpha=alpha)
 
     @property
     def border_color(self) -> Any:
-        return self._roi.roi.border_color
+        # FIXME add field to EditableROI?
+        return self._roi.border_color
 
     @border_color.setter
     def border_color(self, color: cmap.Color | None = None) -> None:
         if color is None:
             color = cmap.Color("yellow")
-        self._roi.roi.border_color = Color(color.hex, alpha=color.alpha)
+        # FIXME add field to EditableROI?
+        self._roi.border_color = Color(color.hex, alpha=color.alpha)
 
     def remove(self) -> None:
         self._roi.parent = None
@@ -334,7 +350,7 @@ class VispyViewerCanvas:
         self._view: scene.ViewBox = central_wdg.add_view()
         self._ndim: Literal[2, 3] | None = None
 
-        self._selected_roi: scene.visuals.Visual = None
+        self._selection: ROIElement | None = None
 
     @property
     def _camera(self) -> vispy.scene.cameras.BaseCamera:
@@ -407,21 +423,11 @@ class VispyViewerCanvas:
         border_color: Any | None = None,
     ) -> VispyRoiHandle:
         """Add a new Rectangular ROI node to the scene."""
-        color = cmap.Color(color) if color is not None else cmap.Color("transparent")
-        border_color = (
-            cmap.Color(border_color)
-            if border_color is not None
-            else cmap.Color("yellow")
-        )
-
-        roi = EditRectVisual(
-            center=[0, 0],
-            width=1e-6,
-            height=1e-6,
+        roi = RectangularROI(
             parent=self._view.scene,
         )
-        self._selected_roi = roi.control_points
-        self._selected_roi.select(False, self._selected_roi.control_points[1])
+        # Start by selecting the bottom right handle
+        self._selection = roi._handles[2]
 
         handle = VispyRoiHandle(roi)
         if vertices:
@@ -458,7 +464,7 @@ class VispyViewerCanvas:
 
     def _on_mouse_move(self, event: SceneMouseEvent) -> None:
         """Mouse moved on the canvas, display the pixel value and position."""
-        self._update_cursor(event.pos)
+        self._update_cursor(event)
 
         images = []
         # Get the images the mouse is over
@@ -496,71 +502,53 @@ class VispyViewerCanvas:
             self._camera.interactive = True
 
     def _on_mouse_press(self, event: SceneMouseEvent) -> None:
-        if self._mode == CanvasMode.EDIT_ROI:
-            self._selected_roi.parent.center = self._canvas_point(event.pos)
-            self._selected_roi.visible(True)
-            handler = qthrottled(self._on_mouse_move_selection(self._selected_roi), 60)
+        pos = self._canvas_point(event.pos)
+        if self._mode == CanvasMode.EDIT_ROI and isinstance(self._selection, Handle):
+            self._selection.parent.move(pos)
+        else:
+            selected = self._canvas.visual_at(event.pos)
+            if isinstance(selected, ROIElement):
+                self._selection = selected
+            elif self._selection is not None:
+                self._selection.select(visible=False)
+                self._selection = None
+
+        if self._selection is not None:
+            self._selection.select(visible=True)
+            self._selection.start_move(pos)
+            self._camera.interactive = False
+            handler = self._on_mouse_move_selection(self._selection)
             self._canvas.events.mouse_move.connect(handler)
 
             def disconnect(event: SceneMouseEvent) -> None:
                 self._canvas.events.mouse_move.disconnect(handler)
                 self._canvas.events.mouse_release.disconnect(disconnect)
+                self._camera.interactive = True
 
             self._canvas.events.mouse_release.connect(disconnect)
-        else:
-            selected = self._canvas.visual_at(event.pos)
-            if self._selected_roi is not None:
-                self._selected_roi.select(False)
-            if isinstance(selected.parent, EditRectVisual) or isinstance(
-                selected.parent.parent, EditRectVisual
-            ):
-                self._selected_roi = selected.parent
-                self._selected_roi.select(True, obj=selected)
-                self._selected_roi.start_move(self._canvas_point(event.pos))
-                self._camera.interactive = False
-                handler = qthrottled(
-                    self._on_mouse_move_selection(self._selected_roi), 60
-                )
-                self._canvas.events.mouse_move.connect(handler)
-
-                def disconnect(event: SceneMouseEvent) -> None:
-                    self._canvas.events.mouse_move.disconnect(handler)
-                    self._canvas.events.mouse_release.disconnect(disconnect)
-                    self._camera.interactive = True
-
-                self._canvas.events.mouse_release.connect(disconnect)
-
-    def _find_roi(
-        self, selection: scene.visuals.Visual | None
-    ) -> EditRectVisual | None:
-        if selection is None:
-            return None
-        if isinstance(selection, EditRectVisual):
-            return selection
-        return self._find_roi(selection.parent)
 
     def _canvas_point(self, pos: list[float]) -> list[float]:
         tr = self._canvas.scene.node_transform(self._view.scene)
         return cast("list[float]", tr.map(pos)[:2])
 
-    def _update_cursor(self, pos: list[float]) -> None:
+    def _update_cursor(self, event: SceneMouseEvent) -> None:
+        # Avoid changing the cursor when dragging
+        if event.press_event is not None:
+            return
+        # In EDIT_ROI mode, use CrossCursor
         if self._mode is CanvasMode.EDIT_ROI:
             self.qwidget().setCursor(Qt.CrossCursor)
             return
-        selected = self._canvas.visual_at(pos)
-
-        if (
-            self._selected_roi is not None
-            and selected is not None
-            and selected.parent is self._selected_roi
-        ):
-            self.qwidget().setCursor(Qt.SizeAllCursor)
+        # If selection has a preference, use it
+        selected = self._canvas.visual_at(event.pos)
+        if isinstance(selected, ROIElement):
+            self.qwidget().setCursor(selected.cursor_pref())
             return
-
+        # Otherwise, normal cursor
         self.qwidget().setCursor(Qt.ArrowCursor)
 
     def _on_mouse_move_selection(
-        self, selection: scene.visuals.Visual
+        self, selection: ROIElement
     ) -> Callable[[SceneMouseEvent], None]:
         def fooooooo(event: SceneMouseEvent) -> None:
             selection.move(self._canvas_point(event.pos))
