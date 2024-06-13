@@ -217,7 +217,7 @@ class PyGFXViewerCanvas:
             handle.cmap = cmap
         return handle
 
-    def add_polygon(
+    def add_roi(
         self,
         vertices: list[tuple[float, float]] | None = ...,
         color: cmap.Color | None = ...,

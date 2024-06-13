@@ -130,12 +130,12 @@ class EditRectVisual(scene.visuals.Compound):
         super().__init__([], parent=parent)
         self.unfreeze()
 
-        # Define polygon
-        self.polygon = scene.visuals.Rectangle(
+        # Define roi
+        self.roi = scene.visuals.Rectangle(
             center=center, width=width, height=height, radius=0, parent=self
         )
-        self.polygon.interactive = True
-        self.add_subvisual(self.polygon)
+        self.roi.interactive = True
+        self.add_subvisual(self.roi)
 
         # Define control points
         self.control_points = ControlPoints(parent=self)
@@ -164,9 +164,9 @@ class EditRectVisual(scene.visuals.Compound):
         self.center = shift
 
     def update_from_controlpoints(self) -> None:
-        self.polygon.center = self.control_points.get_center()
-        self.polygon.width = abs(self.control_points._width)
-        self.polygon.height = abs(self.control_points._height)
+        self.roi.center = self.control_points.get_center()
+        self.roi.width = abs(self.control_points._width)
+        self.roi.height = abs(self.control_points._height)
 
     @property
     def center(self) -> list[float]:
@@ -175,7 +175,7 @@ class EditRectVisual(scene.visuals.Compound):
     @center.setter
     def center(self, val: list[float]) -> None:
         self.control_points.set_center(val[0:2])
-        self.polygon.center = val[0:2]
+        self.roi.center = val[0:2]
 
 
 class VispyImageHandle:
@@ -289,7 +289,7 @@ class VispyRoiHandle:
 
     @property
     def color(self) -> Any:
-        return self._roi.polygon.color
+        return self._roi.roi.color
 
     @color.setter
     def color(self, color: cmap.Color | None = None) -> None:
@@ -298,17 +298,17 @@ class VispyRoiHandle:
         # NB: To enable dragging the shape within the border,
         # we require a positive alpha.
         alpha = max(color.alpha, 1e-6)
-        self._roi.polygon.color = Color(color.hex, alpha=alpha)
+        self._roi.roi.color = Color(color.hex, alpha=alpha)
 
     @property
     def border_color(self) -> Any:
-        return self._roi.polygon.border_color
+        return self._roi.roi.border_color
 
     @border_color.setter
     def border_color(self, color: cmap.Color | None = None) -> None:
         if color is None:
             color = cmap.Color("yellow")
-        self._roi.polygon.border_color = Color(color.hex, alpha=color.alpha)
+        self._roi.roi.border_color = Color(color.hex, alpha=color.alpha)
 
     def remove(self) -> None:
         self._roi.parent = None
@@ -400,17 +400,20 @@ class VispyViewerCanvas:
             handle.cmap = cmap
         return handle
 
-    def add_polygon(
+    def add_roi(
         self,
         vertices: list[tuple[float, float]] | None = None,
-        color: cmap.Color | None = None,
-        border_color: cmap.Color | None = None,
+        color: Any | None = None,
+        border_color: Any | None = None,
     ) -> VispyRoiHandle:
         """Add a new Rectangular ROI node to the scene."""
-        if color is None:
-            color = cmap.Color("transparent")
-        if border_color is None:
-            border_color = cmap.Color("yellow")
+        color = cmap.Color(color) if color is not None else cmap.Color("transparent")
+        border_color = (
+            cmap.Color(border_color)
+            if border_color is not None
+            else cmap.Color("yellow")
+        )
+
         roi = EditRectVisual(
             center=[0, 0],
             width=1e-6,

@@ -73,11 +73,11 @@ class PCanvas(Protocol):
     def add_volume(
         self, data: np.ndarray | None = ..., cmap: cmap.Colormap | None = ...
     ) -> PImageHandle: ...
-    def add_polygon(
+    def add_roi(
         self,
         vertices: list[tuple[float, float]] | None = ...,
-        color: cmap.Color | None = ...,
-        border_color: cmap.Color | None = ...,
+        color: Any = ...,
+        border_color: Any | None = ...,
     ) -> PRoiHandle: ...
     def set_mode(
         self,
