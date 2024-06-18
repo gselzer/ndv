@@ -10,11 +10,15 @@ from qtpy.QtCore import QSize
 from wgpu.gui.qt import QWgpuCanvas
 
 if TYPE_CHECKING:
+    from typing import Sequence
+
     import cmap
     from pygfx.materials import ImageBasicMaterial
     from pygfx.resources import Texture
     from qtpy.QtCore import QEvent
     from qtpy.QtWidgets import QWidget
+
+    from ._protocols import CanvasElement
 
 
 class PyGFXImageHandle:
@@ -229,6 +233,10 @@ class PyGFXViewerCanvas:
             handle.cmap = cmap
         return handle
 
+    @classmethod
+    def supports_roi(cls) -> bool:
+        return False
+
     def add_roi(
         self,
         vertices: list[tuple[float, float]] | None = ...,
@@ -305,3 +313,8 @@ class PyGFXViewerCanvas:
             return (pos_world[0] + 0.5, pos_world[1] + 0.5, pos_world[2] + 0.5)
         else:
             return (-1, -1, -1)
+
+    def elements_at(self, pos: Sequence[float]) -> list[CanvasElement]:
+        """Obtains all elements located at pos."""
+        # TODO
+        return []
