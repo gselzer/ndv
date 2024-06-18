@@ -77,6 +77,7 @@ class PCanvas(Protocol):
         self, pos_xy: tuple[float, float]
     ) -> tuple[float, float, float]:
         """Map XY canvas position (pixels) to XYZ coordinate in world space."""
+
     def add_roi(
         self,
         vertices: list[tuple[float, float]] | None = ...,

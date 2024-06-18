@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import cmap
 import numpy as np
-from qtpy.QtCore import Qt, QEvent
+from qtpy.QtCore import QEvent, Qt
 from qtpy.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from superqt import QCollapsible, QElidingLabel, QIconifyIcon, ensure_main_thread
 from superqt.utils import qthrottled, signals_blocked
