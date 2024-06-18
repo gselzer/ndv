@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     import cmap
     import numpy as np
     from qtpy.QtWidgets import QWidget
+    from qtpy.QtCore import Qt
 
 
 class PImageHandle(Protocol):
@@ -47,6 +48,7 @@ class PRoiHandle(Protocol):
     @border_color.setter
     def border_color(self, color: cmap.Color) -> None: ...
     def remove(self) -> None: ...
+    def cursor_at(self, pos_xy: tuple[float, float]) -> Qt.CursorShape | None: ...
 
 
 # TODO: Are there better names?

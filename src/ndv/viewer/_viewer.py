@@ -195,14 +195,6 @@ class NDViewer(QWidget):
         self._dims_sliders.valueChanged.connect(
             qthrottled(self._update_data_for_index, 20, leading=True)
         )
-        # TODO - there HAS to be a better way to do this...
-        self._canvas.qwidget().mouseReleaseEvent = self._wrap_canvas_mouse_release(
-            self._canvas.qwidget().mouseReleaseEvent
-        )
-        # FIXME - vispy likes to eat all the key presses
-        # self._canvas.qwidget().keyPressEvent = self._wrap_canvas_key_press(
-        #     self._canvas.qwidget().keyPressEvent
-        # )
 
         self._lut_drop = QCollapsible("LUTs", self)
         self._lut_drop.setCollapsedIcon(QIconifyIcon("bi:chevron-down", color=MID_GRAY))
@@ -627,13 +619,40 @@ class NDViewer(QWidget):
         # here is where we get a chance to intercept mouse events before passing them
         # to the canvas. Return `True` to prevent the event from being passed to
         # the backend widget.
-        if event.type() == QEvent.Type.MouseMove and obj is self._qcanvas:
-            self._update_hover_info(cast("QMouseEvent", event).position())
+        etype = event.type()
+        if etype == QEvent.Type.MouseMove:
+            event = cast("QMouseEvent", event)
+            if obj is self._qcanvas:
+                pos = event.position()
+                x, y, _z = self._canvas.canvas_to_world((pos.x(), pos.y()))
+                self._update_hover_info((x, y))
+                # if we're not dragging, update the cursor
+                if event.buttons() == Qt.MouseButton.NoButton:
+                    self._update_cursor((x, y))
+        elif etype == QEvent.Type.MouseButtonRelease:
+            # If in EDIT_ROI mode, a release should untoggle the ROI button
+            if self._mode is CanvasMode.EDIT_ROI:
+                self._add_roi_btn.click()
         return False
 
-    def _update_hover_info(self, point: QPointF) -> None:
+    def _update_cursor(self, pos_xy: tuple[float, float]) -> None:
+        # In EDIT_ROI mode, use CrossCursor
+        if self._mode is CanvasMode.EDIT_ROI:
+            self._qcanvas.setCursor(Qt.CursorShape.CrossCursor)
+            return
+
+        # If selection has a preference, use it
+        if self._roi:
+            if (cursor := self._roi.cursor_at(pos_xy)) is not None:
+                self._qcanvas.setCursor(cursor)
+                return
+
+        # Otherwise, normal cursor
+        self._qcanvas.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def _update_hover_info(self, pos_xy: tuple[float, float]) -> None:
         """Update text of hover_info_label with data value(s) at point."""
-        x, y, _z = self._canvas.canvas_to_world((point.x(), point.y()))
+        x, y = pos_xy
         # TODO: handle 3D data
         if (x < 0 or y < 0) or self._ndims == 3:  # pragma: no cover
             self._hover_info_label.setText("")
@@ -667,30 +686,7 @@ class NDViewer(QWidget):
             text += ",".join(channels)
         self._hover_info_label.setText(text)
 
-    def keyPressEvent(self, a0: QKeyEvent) -> None:
-        if a0.key() == Qt.Key_Delete and self._roi is not None:
+    def keyPressEvent(self, a0: QKeyEvent | None) -> None:
+        if a0 and a0.key() == Qt.Key.Key_Delete and self._roi is not None:
             self._roi.remove()
             self._roi = None
-
-    def _wrap_canvas_mouse_release(
-        self, old_method: Callable[[QMouseEvent], None]
-    ) -> Callable[[QMouseEvent], None]:
-        def new_release(event: QMouseEvent) -> None:
-            # If in EDIT_ROI mode, a release should untoggle the ROI button
-            if self._mode is CanvasMode.EDIT_ROI:
-                self._add_roi_btn.click()
-            # Proceed with normal mouse release
-            return old_method(event)
-
-        return new_release
-
-    def _wrap_canvas_key_press(
-        self, old_method: Callable[[QMouseEvent], None]
-    ) -> Callable[[QMouseEvent], None]:
-        def new_key_press(event: QMouseEvent) -> None:
-            # If in EDIT_ROI mode, a release should untoggle the ROI button
-            self.keyPressEvent(event)
-            # Proceed with normal mouse release
-            return old_method(event)
-
-        return new_key_press

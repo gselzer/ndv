@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Sequence, cast
 
 import cmap
 import numpy as np
@@ -33,19 +33,12 @@ class ROIElement:
     def start_move(self, event: SceneMouseEvent) -> None:
         raise NotImplementedError("Must be implemented in subclass")
 
-    def move(self, pos: list[float]) -> None:
+    def move(self, pos: Sequence[float]) -> None:
         raise NotImplementedError("Must be implemented in subclass")
-
-    def cursor_pref(self) -> Qt.CursorShape:
-        return None
 
 
 class Handle(scene.visuals.Markers, ROIElement):
     """A draggable Marker that is part of a ROI."""
-
-    default_cursor_pref: Callable[[list[float]], Qt.CursorShape] = (
-        lambda _: Qt.SizeAllCursor
-    )
 
     def __init__(
         self, parent: EditableROI, on_move: Callable[[list[float]], None] | None = None
@@ -57,9 +50,7 @@ class Handle(scene.visuals.Markers, ROIElement):
         self.on_move: list[Callable[[list[float]], None]] = []
         if on_move:
             self.on_move.append(on_move)
-        self._cursor_pref: Callable[[list[float]], Qt.CursorShape] = (
-            self.default_cursor_pref
-        )
+
         # NB VisPy asks that the data is a 2D array
         self._pos = np.array([[0, 0]], dtype=np.float32)
         self.interactive = True
@@ -83,9 +74,6 @@ class Handle(scene.visuals.Markers, ROIElement):
 
     def select(self, visible: bool) -> None:
         self.parent.select(visible)
-
-    def cursor_pref(self) -> Qt.CursorShape:
-        return self._cursor_pref(list(self.pos))
 
 
 class EditableROI(scene.visuals.Polygon, ROIElement):
@@ -120,21 +108,11 @@ class RectangularROI(scene.visuals.Rectangle, EditableROI):
             Handle(self, on_move=self.move_bottom_left),
         ]
 
-        for h in self._handles:
-            h._cursor_pref = self._handle_cursor_pref
-
         # drag_reference defines the offset between where the user clicks and the center
         # of the rectangle
         self.drag_reference = [0.0, 0.0]
         self.interactive = True
         self.freeze()
-
-    def _handle_cursor_pref(self, handle_pos: list[float]) -> Qt.CursorShape:
-        if handle_pos[0] < self.center[0] and handle_pos[1] < self.center[1]:
-            return Qt.SizeFDiagCursor
-        if handle_pos[0] > self.center[0] and handle_pos[1] > self.center[1]:
-            return Qt.SizeFDiagCursor
-        return Qt.SizeBDiagCursor
 
     def move_top_left(self, pos: list[float]) -> None:
         self._handles[3].pos = [pos[0], self._handles[3].pos[1]]
@@ -159,9 +137,6 @@ class RectangularROI(scene.visuals.Rectangle, EditableROI):
         self._handles[3].pos = pos
         self._handles[0].pos = [pos[0], self._handles[0].pos[1]]
         self.redraw()
-
-    def cursor_pref(self) -> Qt.CursorShape:
-        return Qt.SizeAllCursor
 
     def start_move(self, pos: list[float]) -> None:
         self.drag_reference = [
@@ -254,7 +229,7 @@ class VispyImageHandle:
 
 
 class VispyRoiHandle:
-    def __init__(self, roi: EditableROI) -> None:
+    def __init__(self, roi: RectangularROI) -> None:
         self._roi = roi
 
     @property
@@ -327,6 +302,40 @@ class VispyRoiHandle:
     def remove(self) -> None:
         self._roi.parent = None
 
+    def cursor_at(self, pos_xy: tuple[float, float]) -> Qt.CursorShape | None:
+        cx, cy = self._roi.center
+        w = self._roi.width / 2
+        h = self._roi.height / 2
+        threshold = 2
+        h_dist = cx - pos_xy[0]  # horiz distance from the center
+        v_dist = cy - pos_xy[1]  # vert  distance from the center
+
+        # first check if we're outside the rectangle
+        # (including a threshold to allow for easier dragging on the handles)
+        if abs(h_dist) > (w + threshold) or abs(v_dist) > (h + threshold):
+            return None
+
+        # check if we're on a corner
+        on_top_edge = h - v_dist < threshold
+        on_bottom_edge = h + v_dist < threshold
+        if w - h_dist < threshold:  # on the left edge
+            if on_top_edge:
+                return Qt.CursorShape.SizeFDiagCursor
+            if on_bottom_edge:
+                return Qt.CursorShape.SizeBDiagCursor
+        if w + h_dist < threshold:  # on the right edge
+            if on_top_edge:
+                return Qt.CursorShape.SizeBDiagCursor
+            if on_bottom_edge:
+                return Qt.CursorShape.SizeFDiagCursor
+
+        # now check if we're strictly outside the rectangle
+        if abs(h_dist) > w or abs(v_dist) > h:
+            return None
+
+        # were inside the rectangle
+        return Qt.CursorShape.SizeAllCursor
+
 
 class VispyViewerCanvas:
     """Vispy-based viewer for data.
@@ -339,7 +348,6 @@ class VispyViewerCanvas:
         self._mode = CanvasMode.PAN_ZOOM
         self._canvas = scene.SceneCanvas()
         self._canvas.events.mouse_press.connect(self._on_mouse_press)
-        self._canvas.events.mouse_move.connect(self._update_cursor)
         self._current_shape: tuple[int, ...] = ()
         self._last_state: dict[Literal[2, 3], Any] = {}
 
@@ -473,7 +481,7 @@ class VispyViewerCanvas:
             self._camera.interactive = True
 
     def _on_mouse_press(self, event: SceneMouseEvent) -> None:
-        pos = self._canvas_point(event.pos)
+        pos = self.canvas_to_world(event.pos)[:2]
         if self._mode == CanvasMode.EDIT_ROI and isinstance(self._selection, Handle):
             self._selection.parent.move(pos)
         else:
@@ -498,30 +506,10 @@ class VispyViewerCanvas:
 
             self._canvas.events.mouse_release.connect(disconnect)
 
-    def _canvas_point(self, pos: list[float]) -> list[float]:
-        tr = self._canvas.scene.node_transform(self._view.scene)
-        return cast("list[float]", tr.map(pos)[:2])
-
-    def _update_cursor(self, event: SceneMouseEvent) -> None:
-        # Avoid changing the cursor when dragging
-        if event.press_event is not None:
-            return
-        # In EDIT_ROI mode, use CrossCursor
-        if self._mode is CanvasMode.EDIT_ROI:
-            self.qwidget().setCursor(Qt.CrossCursor)
-            return
-        # If selection has a preference, use it
-        selected = self._canvas.visual_at(event.pos)
-        if isinstance(selected, ROIElement):
-            self.qwidget().setCursor(selected.cursor_pref())
-            return
-        # Otherwise, normal cursor
-        self.qwidget().setCursor(Qt.ArrowCursor)
-
     def _on_mouse_move_selection(
         self, selection: ROIElement
     ) -> Callable[[SceneMouseEvent], None]:
         def fooooooo(event: SceneMouseEvent) -> None:
-            selection.move(self._canvas_point(event.pos))
+            selection.move(self.canvas_to_world(event.pos)[:2])
 
         return fooooooo
