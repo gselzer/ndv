@@ -38,6 +38,7 @@ class PyGFXImageHandle:
         self._render = render
         self._grid = cast("Texture", image.geometry.grid)
         self._material = cast("ImageBasicMaterial", image.material)
+        self._cmap = cmap.Colormap("gray")
 
     @property
     def data(self) -> np.ndarray:
@@ -45,6 +46,12 @@ class PyGFXImageHandle:
 
     @data.setter
     def data(self, data: np.ndarray) -> None:
+        if data is not None and data.ndim == 3:
+            # VisPy expects (A)RGB data to be X, Y, C
+            for i, s in enumerate(data.shape):
+                if s in [3, 4]:
+                    data = np.moveaxis(data, i, -1)
+                    break
         self._grid.data[:] = data
         self._grid.update_range((0, 0, 0), self._grid.size)
 
@@ -85,7 +92,9 @@ class PyGFXImageHandle:
     @cmap.setter
     def cmap(self, cmap: cmap.Colormap) -> None:
         self._cmap = cmap
-        self._material.map = cmap.to_pygfx()
+        # FIXME: RGB image special case
+        if self.data.ndim != 3:
+            self._material.map = cmap.to_pygfx()
         self._render()
 
     def start_move(self, pos: Sequence[float]) -> None:
@@ -470,6 +479,12 @@ class PyGFXViewerCanvas(PCanvas):
         self, data: np.ndarray | None = None, cmap: cmap.Colormap | None = None
     ) -> PyGFXImageHandle:
         """Add a new Image node to the scene."""
+        if data is not None and data.ndim == 3:
+            # VisPy expects (A)RGB data to be X, Y, C
+            for i, s in enumerate(data.shape):
+                if s in [3, 4]:
+                    data = np.moveaxis(data, i, -1)
+                    break
         tex = pygfx.Texture(data, dim=2)
         image = pygfx.Image(
             pygfx.Geometry(grid=tex),

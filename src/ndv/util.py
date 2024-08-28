@@ -19,7 +19,7 @@ def imshow(
     data: Any | DataWrapper,
     cmap: Any | None = None,
     *,
-    channel_mode: Literal["mono", "composite", "auto"] = "auto",
+    channel_mode: Literal["mono", "composite", "rgb", "auto"] = "auto",
 ) -> NDViewer:
     """Display an array or DataWrapper in a new NDViewer window.
 
@@ -29,7 +29,7 @@ def imshow(
         The data to be displayed. If not a DataWrapper, it will be wrapped in one.
     cmap : Any | None, optional
         The colormap(s) to use for displaying the data.
-    channel_mode : Literal['mono', 'composite'], optional
+    channel_mode : Literal['mono', 'composite', 'rgb'], optional
         The initial mode for displaying the channels. By default "mono" will be
         used unless a cmap is provided, in which case "composite" will be used.
 
