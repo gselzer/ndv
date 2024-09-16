@@ -152,6 +152,8 @@ class NDViewer(QWidget):
         # ROI
         self._roi: PRoiHandle | None = None
 
+        self._data_position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
         # WIDGETS ----------------------------------------------------
 
         # the button that controls the display mode of the channels
@@ -260,7 +262,11 @@ class NDViewer(QWidget):
         raise AttributeError("Cannot set data directly. Use `set_data` method.")
 
     def set_data(
-        self, data: DataWrapper | Any, *, initial_index: Indices | None = None
+        self,
+        data: DataWrapper | Any,
+        *,
+        position: tuple[float, float] | tuple[float, float, float] | None = None,
+        initial_index: Indices | None = None,
     ) -> None:
         """Set the datastore, and, optionally, the sizes of the data.
 
@@ -272,6 +278,9 @@ class NDViewer(QWidget):
             datastores by subclassing `DataWrapper` and implementing the required
             methods. If a `DataWrapper` instance is passed, it is used directly.
             See `DataWrapper` for more information.
+        position : tuple[float, float] | tuple[float, float, float] | None
+            The canvas OFFSET of the data's origin.  This can either be a two- or
+            three-dimensional location. If not provided, the data will have no offset.
         initial_index : Indices | None
             The initial index to display.  This is a mapping of dimensions to integers
             or slices that define the slice of the data to display.  If not provided,
@@ -279,6 +288,10 @@ class NDViewer(QWidget):
         """
         # store the data
         self._data_wrapper = DataWrapper.create(data)
+        if position:
+            if len(position) == 2:
+                position += (0,)
+            self._data_position = position
 
         # set channel axis
         self._channel_axis = self._data_wrapper.guess_channel_axis()
@@ -547,7 +560,10 @@ class NDViewer(QWidget):
                 else GRAYS
             )
             if datum.ndim == 2:
-                handles.append(self._canvas.add_image(datum, cmap=cm))
+                handle = self._canvas.add_image(
+                    datum, cmap=cm, position=self._data_position
+                )
+                handles.append(handle)
             elif datum.ndim == 3:
                 handles.append(self._canvas.add_volume(datum, cmap=cm))
             if imkey not in self._lut_ctrls:
@@ -709,13 +725,12 @@ class NDViewer(QWidget):
         point = event.pos()
         x, y, _z = self._canvas.canvas_to_world((point.x(), point.y()))
         # TODO: handle 3D data
-        if (x < 0 or y < 0) or self._ndims == 3:  # pragma: no cover
+        if self._ndims == 3:  # pragma: no cover
             self._hover_info_label.setText("")
             return False
 
-        x = int(x)
-        y = int(y)
-        text = f"[{y}, {x}]"
+        # FIXME: Consider where the rounding is correct
+        text = f"[{int(y)}, {int(x)}]"
         # TODO: Can we use self._canvas.elements_at?
         for n, handles in enumerate(self._img_handles.values()):
             channels = []
@@ -728,7 +743,12 @@ class NDViewer(QWidget):
                     # texture has already been reduced to 2D). But a more complete
                     # implementation would gather the full current nD index and query
                     # the data source directly.
-                    value = handle.data[y, x]
+                    data_x = int(x - handle.position[0])
+                    data_y = int(y - handle.position[1])
+                    if data_x < 0 or data_y < 0:
+                        continue
+
+                    value = handle.data[data_y, data_x]
                     if isinstance(value, (np.floating, float)):
                         value = f"{value:.2f}"
                     channels.append(f" {n}: {value}")

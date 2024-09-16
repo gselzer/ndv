@@ -88,6 +88,14 @@ class PyGFXImageHandle:
         self._material.map = cmap.to_pygfx()
         self._render()
 
+    @property
+    def position(self) -> tuple[float, float, float]:
+        return tuple(self._image.local.position)
+
+    @position.setter
+    def position(self, position: tuple[float, float, float]) -> None:
+        self._image.local.position = position
+
     def start_move(self, pos: Sequence[float]) -> None:
         pass
 
@@ -467,7 +475,10 @@ class PyGFXViewerCanvas(PCanvas):
             cam.set_state(state)
 
     def add_image(
-        self, data: np.ndarray | None = None, cmap: cmap.Colormap | None = None
+        self,
+        data: np.ndarray | None = None,
+        cmap: cmap.Colormap | None = None,
+        position: tuple[float, float] | tuple[float, float, float] | None = None,
     ) -> PyGFXImageHandle:
         """Add a new Image node to the scene."""
         tex = pygfx.Texture(data, dim=2)
@@ -488,6 +499,10 @@ class PyGFXViewerCanvas(PCanvas):
         handle = PyGFXImageHandle(image, self.refresh)
         if cmap is not None:
             handle.cmap = cmap
+        if position is not None:
+            if len(position) == 2:
+                position = (*position, 0)
+            image.local.position = position
         self._elements[image] = handle
         return handle
 

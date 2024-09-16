@@ -249,6 +249,8 @@ class VispyImageHandle:
     def __init__(self, visual: scene.visuals.Image | scene.visuals.Volume) -> None:
         self._visual = visual
         self._ndim = 2 if isinstance(visual, scene.visuals.Image) else 3
+        self._transform = vispy.visuals.transforms.linear.STTransform()
+        visual.transform = self._transform
 
     @property
     def data(self) -> np.ndarray:
@@ -302,17 +304,17 @@ class VispyImageHandle:
         return self._cmap
 
     @cmap.setter
-    def cmap(self, cmap: cmap.Colormap) -> None:
-        self._cmap = cmap
-        self._visual.cmap = cmap.to_vispy()
+    def cmap(self, c: cmap.Colormap) -> None:
+        self._cmap = c
+        self._visual.cmap = c.to_vispy()
 
     @property
-    def transform(self) -> np.ndarray:
-        raise NotImplementedError
+    def position(self) -> tuple[float, float, float]:
+        return tuple(self._transform.translate[:3])
 
-    @transform.setter
-    def transform(self, transform: np.ndarray) -> None:
-        raise NotImplementedError
+    @position.setter
+    def position(self, position: tuple[float, float, float]) -> None:
+        self._transform.translate = position
 
     def start_move(self, pos: Sequence[float]) -> None:
         pass
@@ -488,7 +490,10 @@ class VispyViewerCanvas(PCanvas):
         self._canvas.update()
 
     def add_image(
-        self, data: np.ndarray | None = None, cmap: cmap.Colormap | None = None
+        self,
+        data: np.ndarray | None = None,
+        cmap: cmap.Colormap | None = None,
+        position: tuple[float, float] | tuple[float, float, float] | None = None,
     ) -> VispyImageHandle:
         """Add a new Image node to the scene."""
         img = scene.visuals.Image(data, parent=self._view.scene)
@@ -502,6 +507,10 @@ class VispyViewerCanvas(PCanvas):
         self._elements[img] = handle
         if cmap is not None:
             handle.cmap = cmap
+        if position is not None:
+            if len(position) == 2:
+                position = (*position, 0)
+            handle.position = position
         return handle
 
     def add_volume(
@@ -551,6 +560,7 @@ class VispyViewerCanvas(PCanvas):
 
         When called with no arguments, the range is set to the full extent of the data.
         """
+        # FIXME: broken
         if len(self._current_shape) >= 2:
             if x is None:
                 x = (0, self._current_shape[-1])
