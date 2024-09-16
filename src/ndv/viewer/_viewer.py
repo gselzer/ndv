@@ -36,7 +36,8 @@ if TYPE_CHECKING:
     from ._backends._protocols import CanvasElement, PCanvas, PImageHandle, PRoiHandle
     from ._dims_slider import DimKey, Indices, Sizes
 
-    ImgKey: TypeAlias = Hashable
+    # The first element is the index of the DataWrapper, and the second a slice index.
+    ImgKey: TypeAlias = tuple[Hashable, Hashable]
     # any mapping of dimensions to sizes
     SizesLike: TypeAlias = Sizes | Iterable[int | tuple[DimKey, int] | Sequence]
 
@@ -124,7 +125,9 @@ class NDViewer(QWidget):
         # ATTRIBUTES ----------------------------------------------------
 
         # mapping of key to a list of objects that control image nodes in the canvas
-        self._img_handles: defaultdict[ImgKey, list[PImageHandle]] = defaultdict(list)
+        self._img_handles: defaultdict[tuple[int, ImgKey], list[PImageHandle]] = (
+            defaultdict(list)
+        )
         # mapping of same keys to the LutControl objects control image display props
         self._lut_ctrls: dict[ImgKey, LutControl] = {}
         self._lut_ctrl_state: dict[ImgKey, dict] = {}
@@ -142,7 +145,7 @@ class NDViewer(QWidget):
             self._cmaps = DEFAULT_COLORMAPS
         self._cmap_cycle = cycle(self._cmaps)
         # the last future that was created by _update_data_for_index
-        self._last_future: Future | None = None
+        self._last_future: dict[int, Future] = {}
 
         # number of dimensions to display
         self._ndims: Literal[2, 3] = 2
@@ -152,7 +155,8 @@ class NDViewer(QWidget):
         # ROI
         self._roi: PRoiHandle | None = None
 
-        self._data_position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._data_wrappers: list[DataWrapper] = []
+        self._data_positions: list[tuple[float, float, float]] = []
 
         # WIDGETS ----------------------------------------------------
 
@@ -249,12 +253,12 @@ class NDViewer(QWidget):
     @property
     def data_wrapper(self) -> DataWrapper:
         """Return the DataWrapper object around the datastore."""
-        return self._data_wrapper
+        raise NotImplementedError()
 
     @property
     def data(self) -> Any:
         """Return the data backing the view."""
-        return self._data_wrapper.data
+        return NotImplementedError()
 
     @data.setter
     def data(self, data: Any) -> None:
@@ -262,6 +266,16 @@ class NDViewer(QWidget):
         raise AttributeError("Cannot set data directly. Use `set_data` method.")
 
     def set_data(
+        self,
+        data: DataWrapper | Any,
+        *,
+        position: tuple[float, float] | tuple[float, float, float] | None = None,
+        initial_index: Indices | None = None,
+    ) -> None:
+        self._clear_images()
+        self.add_data(data, position=position, initial_index=initial_index)
+
+    def add_data(
         self,
         data: DataWrapper | Any,
         *,
@@ -287,17 +301,20 @@ class NDViewer(QWidget):
             the initial index will be set to the middle of the data.
         """
         # store the data
-        self._data_wrapper = DataWrapper.create(data)
+        data_wrapper = DataWrapper.create(data)
+        self._data_wrappers.append(data_wrapper)
         if position:
             if len(position) == 2:
                 position += (0,)
-            self._data_position = position
+        else:
+            position = (0, 0, 0)
+        self._data_positions.append(position)
 
         # set channel axis
-        self._channel_axis = self._data_wrapper.guess_channel_axis()
+        self._channel_axis = data_wrapper.guess_channel_axis()
 
         # update the dimensions we are visualizing
-        sizes = self._data_wrapper.sizes()
+        sizes = self._get_sizes()
         visualized_dims = list(sizes)[-self._ndims :]
         self.set_visualized_dims(visualized_dims)
 
@@ -317,8 +334,16 @@ class NDViewer(QWidget):
         with signals_blocked(self._dims_sliders):
             self.set_current_index(idx)
         # update the data info label
-        self._data_info_label.setText(self._data_wrapper.summary_info())
+        self._data_info_label.setText(data_wrapper.summary_info())
         self.refresh()
+        # TODO: Combine summary infos
+
+    def _get_sizes(self) -> Sizes:
+        sizes: dict[DimKey, int] = {}
+        for dw in self._data_wrappers:
+            for k, v in dw.sizes().items():
+                sizes[k] = max(sizes.get(k, v), v)
+        return sizes
 
     def set_roi(
         self,
@@ -365,7 +390,7 @@ class NDViewer(QWidget):
         self._canvas.set_ndim(ndim)
 
         # set the visibility of the last non-channel dimension
-        sizes = list(self._data_wrapper.sizes())
+        sizes = list(self._get_sizes())
         if self._channel_axis is not None:
             sizes = [x for x in sizes if x != self._channel_axis]
         if len(sizes) >= 3:
@@ -452,7 +477,7 @@ class NDViewer(QWidget):
 
         If `sizes` is not provided, sizes will be inferred from the datastore.
         """
-        maxes = self._data_wrapper.sizes()
+        maxes = self._get_sizes()
         self._dims_sliders.setMaxima({k: v - 1 for k, v in maxes.items()})
 
         # FIXME: this needs to be moved and made user-controlled
@@ -488,7 +513,7 @@ class NDViewer(QWidget):
         if (
             self._channel_axis is not None
             and self._channel_mode == ChannelMode.COMPOSITE
-            and self._channel_axis in (sizes := self._data_wrapper.sizes())
+            and self._channel_axis in (sizes := self._get_sizes())
         ):
             indices: list[Indices] = [
                 {**index, self._channel_axis: i}
@@ -497,31 +522,34 @@ class NDViewer(QWidget):
         else:
             indices = [index]
 
-        if self._last_future:
-            self._last_future.cancel()
-
         # don't request any dimensions that are not visualized
         indices = [
             {k: v for k, v in idx.items() if k not in self._visualized_dims}
             for idx in indices
         ]
-        try:
-            self._last_future = f = self._data_wrapper.isel_async(indices)
-        except Exception as e:
-            raise type(e)(f"Failed to index data with {index}: {e}") from e
 
+        for i, dw in enumerate(self._data_wrappers):
+            self._isel_wrapper(indices, i, dw)
+
+    def _isel_wrapper(self, indices: Indices, i: int, dw: DataWrapper) -> None:
+        if i in self._last_future:
+            self._last_future[i].cancel()
+        try:
+            self._last_future[i] = f = dw.isel_async(indices)
+        except Exception as e:
+            raise type(e)(f"Failed to index data {dw} with {indices}: {e}") from e
         self._progress_spinner.show()
-        f.add_done_callback(self._on_data_slice_ready)
+        f.add_done_callback(lambda f: self._on_data_slice_ready(i, f))
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
-        if self._last_future is not None:
-            self._last_future.cancel()
-            self._last_future = None
+        for i in self._last_future:
+            if future := self._last_future.pop(i, None):
+                future.cancel()
         super().closeEvent(a0)
 
     @ensure_main_thread  # type: ignore
     def _on_data_slice_ready(
-        self, future: Future[Iterable[tuple[Indices, np.ndarray]]]
+        self, wrapper_idx: int, future: Future[Iterable[tuple[Indices, np.ndarray]]]
     ) -> None:
         """Update the displayed image for the given index.
 
@@ -530,16 +558,18 @@ class NDViewer(QWidget):
         # NOTE: removing the reference to the last future here is important
         # because the future has a reference to this widget in its _done_callbacks
         # which will prevent the widget from being garbage collected if the future
-        self._last_future = None
+        self._last_future.pop(wrapper_idx, None)
         self._progress_spinner.hide()
         if future.cancelled():
             return
 
         for idx, datum in future.result():
-            self._update_canvas_data(datum, idx)
+            self._update_canvas_data(datum, idx, wrapper_idx)
         self._canvas.refresh()
 
-    def _update_canvas_data(self, data: np.ndarray, index: Indices) -> None:
+    def _update_canvas_data(
+        self, data: np.ndarray, index: Indices, wrapper_idx: int
+    ) -> None:
         """Actually update the image handle(s) with the (sliced) data.
 
         By this point, data should be sliced from the underlying datastore.  Any
@@ -548,8 +578,10 @@ class NDViewer(QWidget):
         """
         imkey = self._image_key(index)
         datum = self._reduce_data_for_display(data)
-        if handles := self._img_handles[imkey]:
+        if handles := self._img_handles[(wrapper_idx, imkey)]:
             for handle in handles:
+                if not (handle.data == datum).all():
+                    pass
                 handle.data = datum
             if ctrl := self._lut_ctrls.get(imkey, None):
                 ctrl.update_autoscale()
@@ -561,7 +593,7 @@ class NDViewer(QWidget):
             )
             if datum.ndim == 2:
                 handle = self._canvas.add_image(
-                    datum, cmap=cm, position=self._data_position
+                    datum, cmap=cm, position=self._data_positions[wrapper_idx]
                 )
                 handles.append(handle)
             elif datum.ndim == 3:
@@ -581,6 +613,8 @@ class NDViewer(QWidget):
                 if imkey in self._lut_ctrl_state:
                     c._set_state(self._lut_ctrl_state[imkey])
                 self._lut_drop.addWidget(c)
+            else:
+                self._lut_ctrls[imkey]._handles.append(handle)
 
     def _reduce_data_for_display(
         self, data: np.ndarray, reductor: Callable[..., np.ndarray] = np.max
@@ -754,10 +788,7 @@ class NDViewer(QWidget):
                     channels.append(f" {n}: {value}")
                 except IndexError:
                     # we're out of bounds
-                    # if we eventually have multiple image sources with different
-                    # extents, this will need to be handled.  here, we just skip
-                    self._hover_info_label.setText("")
-                    return False
+                    pass
                 break  # only getting one handle per channel
             text += ",".join(channels)
         self._hover_info_label.setText(text)

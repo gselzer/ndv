@@ -42,7 +42,7 @@ class LutControl(QWidget):
         auto_clim: bool = True,
     ) -> None:
         super().__init__(parent)
-        self._handles = handles
+        self._handles = list(handles)
         self._name = name
 
         self._visible = QCheckBox(name)

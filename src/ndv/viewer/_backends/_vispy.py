@@ -560,14 +560,35 @@ class VispyViewerCanvas(PCanvas):
 
         When called with no arguments, the range is set to the full extent of the data.
         """
-        # FIXME: broken
-        if len(self._current_shape) >= 2:
-            if x is None:
-                x = (0, self._current_shape[-1])
-            if y is None:
-                y = (0, self._current_shape[-2])
-        if z is None and len(self._current_shape) == 3:
-            z = (0, self._current_shape[-3])
+        _x = [0.0, 0.0]
+        _y = [0.0, 0.0]
+        _z = [0.0, 0.0]
+
+        for handle in self._elements.values():
+            if isinstance(handle, VispyImageHandle):
+                shape = handle.data.shape
+                position = handle.position
+                _x[0] = min(_x[0], position[0])
+                _y[0] = min(_y[0], position[1])
+                _x[1] = max(_x[1], position[0] + shape[0])
+                _y[1] = max(_y[1], position[1] + shape[1])
+                if len(shape) > 2:
+                    _z[0] = min(_z[0], position[2])
+                    _z[1] = max(_z[1], position[2] + shape[2])
+            elif isinstance(handle, VispyRoiHandle):
+                for v in handle.vertices:
+                    _x[0] = min(_x[0], v[0])
+                    _x[1] = max(_x[1], v[0])
+                    _y[0] = min(_y[0], v[1])
+                    _y[1] = max(_y[1], v[1])
+                    if len(v) > 2:
+                        _z[0] = min(_z[0], v[2])
+                        _z[1] = max(_z[1], v[2])
+
+        x = cast(tuple[float, float], _x) if x is None else x
+        y = cast(tuple[float, float], _y) if y is None else y
+        z = cast(tuple[float, float], _z) if z is None else z
+
         is_3d = isinstance(self._camera, scene.ArcballCamera)
         if is_3d:
             self._camera._quaternion = DEFAULT_QUATERNION

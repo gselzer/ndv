@@ -3,10 +3,10 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from qtpy.QtWidgets import QApplication
+import numpy as np
+from qtpy.QtWidgets import QApplication, QPushButton
 
 from ndv import NDViewer
-from ndv.data import cells3d
 
 if TYPE_CHECKING:
     from qtpy.QtCore import QCoreApplication
@@ -27,7 +27,31 @@ app, _ = _get_app()
 
 viewer = NDViewer()
 
-viewer.set_data(cells3d(), position=(-10, -10))
+tiles = []
+img_shape = (10, 10)
+tile: np.ndarray
+# FIXME? Unfortunately, but naturally, there's a performance drop when you
+# add multiple datasets. Vispy drops about 3 FPS
+for i in range(3):
+    for j in range(3):
+        tile = np.ones(img_shape) * (i + j)
+        tile[0, 0] += 1
+        tiles.append(tile)
+        viewer.add_data(data=tile, position=(10 * i, 10 * j))
+
+
+def randomize_last_tile() -> None:
+    global tile
+    global img_shape
+    tile[:, :] = np.random.randint(low=1, high=5, size=img_shape)
+    # FIXME: This doesn't actually update the image on the canvas
+    # The fix may be present within https://github.com/pyapp-kit/ndv/pull/41
+    viewer.set_current_index()
+
+
+random_btn = QPushButton("Randomize!")
+random_btn.clicked.connect(randomize_last_tile)
+viewer._btns.addWidget(random_btn)
 
 viewer.show()
 viewer.raise_()
