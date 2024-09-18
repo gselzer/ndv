@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
-from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QPushButton, QWidget
+from qtpy.QtCore import Qt, Signal
+from qtpy.QtGui import QPalette
+from qtpy.QtWidgets import (
+    QAbstractSpinBox,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFrame,
+    QHBoxLayout,
+    QPushButton,
+    QWidget,
+)
 from superqt import QLabeledRangeSlider
 from superqt.cmap import QColormapComboBox
 from superqt.utils import signals_blocked
+
+# TODO: Generalize, allow multiple backends
+from vispy import scene
 
 from ._dims_slider import SS
 
@@ -15,6 +28,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     import cmap
+    from cmap import Colormap
+    from vispy.scene import events
 
     from ._backends._protocols import PImageHandle
 
@@ -135,3 +150,309 @@ class LutControl(QWidget):
             self._clims.setMinimum(min(mi, self._clims.minimum()))
             self._clims.setMaximum(max(ma, self._clims.maximum()))
             self._clims.setValue((mi, ma))
+
+
+class HistogramLutControl(LutControl):
+    def __init__(
+        self,
+        name: str = "",
+        handles: list[PImageHandle] | None = None,
+        parent: QWidget | None = None,
+        cmaplist: Iterable[Any] = (),
+        auto_clim: bool = True,
+    ) -> None:
+        if handles is None:
+            handles = []
+        self._histogram = HistogramWidget()
+        super().__init__(name, handles, parent, cmaplist, auto_clim)
+        self._clims.setVisible(False)
+        layout = self.layout()
+        if not isinstance(layout, QHBoxLayout):
+            raise Exception(f"LutControl layout is a {type(layout)}")
+        layout.insertWidget(2, self._histogram, 1)
+
+        if len(handles) == 1:
+            self._histogram.dataChanged.emit(handles[0].data)
+
+    def _on_cmap_changed(self, cmap: Colormap) -> None:
+        super()._on_cmap_changed(cmap)
+        self._histogram.recolor(cmap.color_stops[-1].color)
+
+    def update_autoscale(self) -> None:
+        # TODO: Handle (heh) multiple handles
+        if (handle := next(iter(self._handles), None)) is not None:
+            self._histogram.dataChanged.emit(handle.data)
+            if not self._auto_clim.isChecked() or not self._visible.isChecked():
+                return
+
+            # find the min and max values for the current channel
+            clims = [np.inf, -np.inf]
+            for handle in self._handles:
+                clims[0] = min(clims[0], np.nanmin(handle.data))
+                clims[1] = max(clims[1], np.nanmax(handle.data))
+
+            mi, ma = tuple(int(x) for x in clims)
+            for handle in self._handles:
+                handle.clim = (mi, ma)
+
+            # set the slider values to the new clims
+            with signals_blocked(self._histogram):
+                self._histogram.min_box.setValue(mi)
+                self._histogram._canvas.l._l_bound.value = mi
+
+                self._histogram.max_box.setValue(ma)
+                self._histogram._canvas.l._r_bound.value = ma
+
+            # HACK
+            self._auto_clim.setChecked(True)
+
+
+class HistogramWidget(QWidget):
+    dataChanged = Signal(np.ndarray)
+    climsChanged = Signal(float, float)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        layout = QHBoxLayout(self)
+        self.bgcolor = self.palette().color(QPalette.ColorRole.Base).getRgb()
+        self._dtype: np.dtype = np.dtype("uint8")
+
+        self.min_box = QDoubleSpinBox()
+        self.min_box.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.min_box.valueChanged.connect(self._on_min_box_changed)
+        self.climsChanged.connect(self._on_clims_changed)
+        self._canvas = HistogramCanvas(self, bgcolor=self.bgcolor)
+        self.max_box = QDoubleSpinBox()
+        self.max_box.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.max_box.valueChanged.connect(self._on_max_box_changed)
+
+        layout.addWidget(self.min_box)
+        layout.addWidget(self._canvas.native)
+        layout.addWidget(self.max_box)
+
+        self.dataChanged.connect(self._on_data_change)
+
+    def _on_min_box_changed(self, val: float) -> None:
+        self._on_clims_changed(val, self.max_box.value())
+
+    def _on_max_box_changed(self, val: float) -> None:
+        self._on_clims_changed(self.min_box.value(), val)
+
+    def recolor(self, color: Any) -> None:
+        self._canvas.l._mesh.color = color
+
+    def _on_clims_changed(self, cmin: float, cmax: float) -> None:
+        with signals_blocked(self):
+            self.min_box.setValue(cmin)
+            self._canvas.l._l_bound.value = cmin
+
+            self.max_box.setValue(cmax)
+            self._canvas.l._r_bound.value = cmax
+        if (parent := self.parent()) is not None:
+            parent._on_clims_changed((cmin, cmax))
+
+    def _on_data_change(self, data: np.ndarray) -> None:
+        if data.dtype != self._dtype:
+            self._dtype = data.dtype
+            try:
+                info: np.iinfo | np.finfo = np.iinfo(self._dtype)
+            except Exception:
+                # NB: don't know how to find out type info if this one also fails
+                info = np.finfo(self._dtype)
+
+            self._canvas._range = (info.min, info.max)
+            r = self._canvas._range[1] - self._canvas._range[0]
+            self._canvas._view.camera.rect = (
+                self._canvas._range[0] - (r * 0.1),  # x pos of lower left corner
+                -0.1,  # y pos of lower left corner
+                r * 1.2,  # width
+                1.2,  # height
+            )
+            self._canvas.l._l_bound.transform.scale = [r * 0.05, 1]
+            self._canvas.l._r_bound.transform.scale = [r * 0.05, 1]
+            self.min_box.setRange(*self._canvas._range)
+            self.max_box.setRange(*self._canvas._range)
+            self._on_clims_changed(*self._canvas._range)
+
+        self._canvas.l._mesh.data = data
+
+
+class Bound(scene.visuals.Polygon):
+    def __init__(self, x: float, left: bool, *args: Any, **kwargs: Any) -> None:
+        pos: list[list[float]] = [[0, 0], [1, 0.5], [0, 1]]
+        if left:
+            pos[1][0] = -1
+        kwargs["pos"] = pos
+
+        kwargs.setdefault("color", "white")
+        kwargs.setdefault("border_color", "black")
+
+        scene.visuals.Polygon.__init__(
+            self,
+            *args,
+            **kwargs,
+        )
+
+        self.unfreeze()
+        self.interactive = True
+        self.transform = scene.transforms.STTransform()
+
+        self._move_offset = [0, 0, 0, 0]
+
+        self.freeze()
+
+    def start_move(self, pos: tuple[float, float]) -> None:
+        self._move_offset[:2] = pos - self.transform.translate[:2]
+
+    def move(self, pos: tuple[float, float]) -> None:
+        t = self.transform.translate
+        t[0] = max(0, min(1, pos[0] - self._move_offset[0]))
+        self.transform.translate = t
+
+    @property
+    def value(self) -> float:
+        return float(self.transform.translate[0])
+
+    @value.setter
+    def value(self, v: float) -> None:
+        t = self.transform.translate
+        t[0] = v
+        self.transform.translate = t
+
+
+# TODO: Create Visual?
+class LutEditor(scene.visuals.Compound):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__([], *args, **kwargs)
+
+        self.unfreeze()
+
+        self._l_bound = Bound(parent=self, x=0, left=True)
+        self._r_bound = Bound(parent=self, x=1, left=False)
+        self._mesh = Histogram(parent=self)
+
+        self.freeze()
+
+
+class Histogram(scene.visuals.Mesh):
+    def __init__(
+        self,
+        data: np.ndarray | None = None,
+        color: Any = "white",
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        kwargs["color"] = color
+        super().__init__(*args, **kwargs)
+
+        self.unfreeze()
+        self.bins = 256
+        self.range: tuple[float, float] = (0, 1)
+        self._data: np.ndarray | None = None
+        if data is not None:
+            self.data = data
+            self._update_histogram()
+
+        self.freeze()
+
+    @property
+    def data(self) -> np.ndarray:
+        if self._data is not None:
+            return self._data
+        raise Exception("Histogram has no data")
+
+    @data.setter
+    def data(self, d: np.ndarray) -> None:
+        self._data = d
+        try:
+            iinfo = np.iinfo(self._data.dtype)
+            self.range = (iinfo.min, iinfo.max)
+        except Exception as exc:
+            raise Exception(f"Unsupported dtype: {self._data.dtype}") from exc
+        self._update_histogram()
+
+    def _update_histogram(self) -> None:
+        """Graciously adapted from vispy.visuals.histogram.py."""
+        #   4-5
+        #   | |
+        # 1-2/7-8
+        # |/| | |
+        # 0-3-6-9
+        #
+
+        # do the histogramming
+        data, bin_edges = np.histogram(self.data, self.bins, range=self.range)
+        # normalize histograms
+        data = data / np.max(data)
+        # construct our vertices
+        rr = np.zeros((3 * len(bin_edges) - 2, 3), np.float32)
+        rr[:, 0] = np.repeat(bin_edges, 3)[1:-1]
+        rr[1::3, 1] = data
+        rr[2::3, 1] = data
+        bin_edges.astype(np.float32)
+        # and now our tris
+        tris = np.zeros((2 * len(bin_edges) - 2, 3), np.uint32)
+        offsets = 3 * np.arange(len(bin_edges) - 1, dtype=np.uint32)[:, np.newaxis]
+        tri_1 = np.array([0, 2, 1])
+        tri_2 = np.array([2, 0, 3])
+        tris[::2] = tri_1 + offsets
+        tris[1::2] = tri_2 + offsets
+
+        self.set_data(vertices=rr, faces=tris)
+
+
+class HistogramCanvas(scene.SceneCanvas):
+    def __init__(self, wdg: HistogramWidget, bgcolor: Any = "black") -> None:
+        super().__init__(
+            show=True,
+            # size=(200, 100),
+        )
+
+        self.unfreeze()
+        central_wdg: scene.Widget = self.central_widget
+        self._view: scene.ViewBox = central_wdg.add_view()
+        if isinstance(bgcolor, Sequence) and not isinstance(bgcolor, str):
+            bgcolor = [float(x) / 255 for x in bgcolor]
+        self._view.bgcolor = bgcolor
+
+        self.l = LutEditor(
+            parent=self._view.scene,
+        )
+        self._view.camera = self._camera = scene.PanZoomCamera(rect=(0, 0, 0, 0))
+        self.l.transform = scene.transforms.STTransform()
+        # self._view.camera = self._camera
+        self._camera.interactive = False
+        self._wdg = wdg
+        self._on_mouse_move: list[Callable[[tuple[int, int]], None]] = []
+        self.pressed: Bound | None = None
+        self.press_offset: float = 0
+        self._range = (0, 1)
+
+        self.freeze()
+
+    def on_mouse_press(self, event: events.SceneMouseEvent) -> None:
+        pos = self._view.scene.transform.imap(event.pos)[:2]
+        pos = self.l.transform.imap(pos)[:2]
+        for v in self.visuals_at(event.pos):
+            if isinstance(v, Bound):
+                self.pressed = v
+                self.press_offset = pos[0] - v.value
+                return
+        self.pressed = None
+
+    def on_mouse_move(self, event: events.SceneMouseEvent) -> None:
+        if self.pressed is None:
+            return
+        pos = self._view.scene.transform.imap(event.pos)[:2]
+        pos = self.l.transform.imap(pos)[0] - self.press_offset
+        if self.pressed is self.l._l_bound:
+            bound_pos = max(self._range[0], min(pos, self.l._r_bound.value))
+            self.l._l_bound.value = bound_pos
+            self._wdg.climsChanged.emit(self.l._l_bound.value, self.l._r_bound.value)
+        elif self.pressed is self.l._r_bound:
+            bound_pos = max(self.l._l_bound.value, min(pos, self._range[1]))
+            self.l._r_bound.value = bound_pos
+            self._wdg.climsChanged.emit(self.l._l_bound.value, self.l._r_bound.value)
+
+    def on_mouse_release(self, event: events.SceneMouseEvent) -> None:
+        self.pressed = None

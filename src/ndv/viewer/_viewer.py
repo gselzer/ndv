@@ -23,7 +23,7 @@ from ndv.viewer._components import (
 from ._backends import get_canvas_class
 from ._data_wrapper import DataWrapper
 from ._dims_slider import DimsSliders
-from ._lut_control import LutControl
+from ._lut_control import HistogramLutControl, LutControl
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable, Sequence
@@ -552,7 +552,7 @@ class NDViewer(QWidget):
                 handles.append(self._canvas.add_volume(datum, cmap=cm))
             if imkey not in self._lut_ctrls:
                 ch_index = index.get(self._channel_axis, 0)
-                self._lut_ctrls[imkey] = c = LutControl(
+                self._lut_ctrls[imkey] = c = HistogramLutControl(
                     f"Ch {ch_index}",
                     handles,
                     self,
