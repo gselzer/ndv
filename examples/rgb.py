@@ -13,6 +13,5 @@ for x in range(256):
         img[x, y, 2] = 255 - x
         img[x, y, 3] = math.sqrt((x - 128) ** 2 + (y - 128) ** 2)
 
-img = img.transpose(2, 0, 1)
-
-ndv.imshow(img, channel_mode="rgb")
+# ndv assumes that a trailing dimension of size 3 or 4 is an RGB(A) image
+ndv.imshow(img)

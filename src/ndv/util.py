@@ -39,12 +39,6 @@ def imshow(
         The viewer window.
     """
     app, should_exec = _get_app()
-    if cmap is not None:
-        channel_mode = "composite"
-        if not isinstance(cmap, (list, tuple)):
-            cmap = [cmap]
-    elif channel_mode == "auto":
-        channel_mode = "mono"
     viewer = NDViewer(data, colormaps=cmap, channel_mode=channel_mode)
     viewer.show()
     viewer.raise_()

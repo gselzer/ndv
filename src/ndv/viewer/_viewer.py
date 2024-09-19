@@ -117,7 +117,8 @@ class NDViewer(QWidget):
         colormaps: Iterable[cmap._colormap.ColorStopsLike] | None = None,
         parent: QWidget | None = None,
         channel_axis: DimKey | None = None,
-        channel_mode: ChannelMode | str = ChannelMode.MONO,
+        channel_mode: ChannelMode
+        | Literal["mono", "composite", "rgb", "auto"] = ChannelMode.MONO,
     ):
         super().__init__(parent=parent)
 
@@ -234,9 +235,22 @@ class NDViewer(QWidget):
 
         # SETUP ------------------------------------------------------
 
-        self.set_channel_mode(channel_mode)
         if data is not None:
             self.set_data(data)
+        if colormaps is not None:
+            channel_mode = "composite"
+        elif channel_mode == "auto":
+            if self.data is not None and self.data.shape[-1] in [3, 4]:
+                channel_mode = ChannelMode.RGB
+                if colormaps is None:
+                    self._cmaps = [
+                        cmap.Colormap("red"),
+                        cmap.Colormap("green"),
+                        cmap.Colormap("blue"),
+                    ]
+            else:
+                channel_mode = ChannelMode.MONO
+        self.set_channel_mode(channel_mode)
 
     # ------------------- PUBLIC API ----------------------------
     @property
