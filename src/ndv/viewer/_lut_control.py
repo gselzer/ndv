@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
@@ -346,20 +347,20 @@ class Histogram(scene.visuals.Mesh):
         super().__init__(*args, **kwargs)
 
         self.unfreeze()
+        # the last future that was created by _update_data_for_index
+        self._last_future: Future | None = None
+        self._executor = ThreadPoolExecutor(max_workers=2)
         self.bins = 256
         self.range: tuple[float, float] = (0, 1)
-        self._data: np.ndarray | None = None
+        self._data: np.ndarray = np.empty(())
         if data is not None:
             self.data = data
-            self._update_histogram()
 
         self.freeze()
 
     @property
     def data(self) -> np.ndarray:
-        if self._data is not None:
-            return self._data
-        raise Exception("Histogram has no data")
+        return self._data
 
     @data.setter
     def data(self, d: np.ndarray) -> None:
@@ -369,9 +370,16 @@ class Histogram(scene.visuals.Mesh):
             self.range = (iinfo.min, iinfo.max)
         except Exception as exc:
             raise Exception(f"Unsupported dtype: {self._data.dtype}") from exc
-        self._update_histogram()
+        if self._last_future:
+            self._last_future.cancel()
+        self._last_future = f = self._executor.submit(
+            lambda: self._recompute_vertices(d)
+        )
+        f.add_done_callback(self._update_histogram)
 
-    def _update_histogram(self) -> None:
+    def _recompute_vertices(
+        self, bin_vals: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Graciously adapted from vispy.visuals.histogram.py."""
         #   4-5
         #   | |
@@ -381,14 +389,14 @@ class Histogram(scene.visuals.Mesh):
         #
 
         # do the histogramming
-        data, bin_edges = np.histogram(self.data, self.bins, range=self.range)
+        bin_vals, bin_edges = np.histogram(bin_vals, self.bins, range=self.range)
         # normalize histograms
-        data = data / np.max(data)
+        bin_vals = bin_vals / np.max(bin_vals)
         # construct our vertices
         rr = np.zeros((3 * len(bin_edges) - 2, 3), np.float32)
         rr[:, 0] = np.repeat(bin_edges, 3)[1:-1]
-        rr[1::3, 1] = data
-        rr[2::3, 1] = data
+        rr[1::3, 1] = bin_vals
+        rr[2::3, 1] = bin_vals
         bin_edges.astype(np.float32)
         # and now our tris
         tris = np.zeros((2 * len(bin_edges) - 2, 3), np.uint32)
@@ -398,7 +406,17 @@ class Histogram(scene.visuals.Mesh):
         tris[::2] = tri_1 + offsets
         tris[1::2] = tri_2 + offsets
 
-        self.set_data(vertices=rr, faces=tris)
+        return (rr, tris)
+
+    def _update_histogram(self, future: Future[tuple[np.ndarray, np.ndarray]]) -> None:
+        # NOTE: removing the reference to the last future here is important
+        # because the future has a reference to this widget in its _done_callbacks
+        # which will prevent the widget from being garbage collected if the future
+        self._last_future = None
+        if future.cancelled():
+            return
+        data = future.result()
+        self.set_data(vertices=data[0], faces=data[1])
 
 
 class HistogramCanvas(scene.SceneCanvas):
