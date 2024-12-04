@@ -32,31 +32,12 @@ viewer.show()
 app.exec()
 ```
 
-## `ndv.NDViewer`
+## Features
 
-- very fast import and load time
-- supports arbitrary number of dimensions, with 2D/3D view canvas, and sliders for all non-visible dims
-- sliders support integer as well as slice (range)-based slicing
+<!-- Sounds really boring - can we spice it up? -->
+- data views on a 2D/3D canvas
+- sliders for all non-visible dims, supporting integer as well as slice (range)-based slicing
 - colormaps provided by [cmap](https://github.com/tlambert03/cmap)
-- supports [vispy](https://github.com/vispy/vispy) and [pygfx](https://github.com/pygfx/pygfx) backends
-- supports any numpy-like duck arrays, including (but not limited to):
-  - `numpy.ndarray`
-  - `cupy.ndarray`
-  - `dask.array.Array`
-  - `jax.Array`
-  - `pyopencl.array.Array`
-  - `sparse.COO`
-  - `tensorstore.TensorStore` (supports named dimensions)
-  - `torch.Tensor` (supports named dimensions)
-  - `xarray.DataArray` (supports named dimensions)
-  - `zarr` (supports named dimensions)
-
-See examples for each of these array types in [examples](./examples/)
-
-> [!NOTE]
-> *You can add support for any custom storage class by subclassing `ndv.DataWrapper`
-> and implementing a couple methods.  
-> (This doesn't require modifying ndv, but contributions of new wrappers are welcome!)*
 
 ## Installation
 
@@ -74,15 +55,78 @@ pip install ndv[pyqt,vispy]
 > but you can override this with the environment variable
 > `NDV_CANVAS_BACKEND=pygfx` or `NDV_CANVAS_BACKEND=vispy`
 
-## Motivation
+## Goals
+<!-- In many ways, this should be treated as a roadmap -->
 
-This package arose from the need for a way to *quickly* view multi-dimensional arrays with
-zero tolerance for long import times and/or excessive dependency lists. I want something that I can
-use to view any of the many multi-dimensional array types, out of the box, with no assumptions
-about dimensionality. I want it to work reasonably well with remote, asynchronously loaded data.
-I also want it to take advantage of things like named dimensions and categorical coordinate values
-when available. For now, it's a Qt-only widget, since that's where the need arose, but I can
-imagine a jupyter widget in the future (likely as a remote frame buffer for vispy/pygfx).
+ndv provides data **visualization** and **inspection**. *data* in this case refers to an array of values which might be:
+  - n-dimensional
+  - updated (overwritten and/or appended)
+  <!--TODO: Preserved these from Motivation - but can we flesh them out more?-->
+  - asynchronously loaded
+  - remote
 
-I do not intend for this to grow into full-fledged application, or wrap a complete scene graph,
-though point and ROI selection would be welcome additions.
+To perform this task pleasantly, ndv strives to be:
+
+- **General**: `ndv.NDViewer` supports (*but does not depend on*):
+  - many **Canvas Backends**:
+    - [vispy](https://github.com/vispy/vispy)
+    - [pygfx](https://github.com/pygfx/pygfx)
+  <!-- TODO: Widget frontends? -->
+  - many **Widget Backends**:
+    <!-- TODO: Better link? -->
+    - [Qt](https://www.qt.io/)
+    <!-- TODO: Actually support this? -->
+    - [Jupyter](https://jupyter.org/)
+  - many **Array Types**:
+    - `numpy.ndarray`
+    - `cupy.ndarray`
+    - `dask.array.Array`
+    - `jax.Array`
+    - `pyopencl.array.Array`
+    - `sparse.COO`
+    - `tensorstore.TensorStore` (supports named dimensions)
+    - `torch.Tensor` (supports named dimensions)
+    - `xarray.DataArray` (supports named dimensions)
+    - `zarr` (supports named dimensions)
+
+    See examples for each of these array types in [examples](./examples/)
+
+    <!-- TODO: Is this necessary? -->
+    > [!NOTE]
+    > *you can add support for any custom storage class by subclassing `ndv.datawrapper`
+    > and implementing a couple methods.  
+    > (this doesn't require modifying ndv, but contributions of new wrappers are welcome!)*
+
+
+- **Snappy**: Minimal dependencies ensure quick import and load. `ndv.NDViewer` should be capbable of displaying "large" datasets at "high" framerates.
+
+- **Metadata-aware**: `ndv.NDViewer` utilizes any provided metadata to the best of its ability, including:
+    <!-- TODO: What else? -->
+  - axis, channel labels
+  - voxel scales
+
+## Limitations
+
+ndv avoids the following features, which would introduce scope creep and complicate the pursuit of our [goals](#goals):
+
+- Plugins and/or Plugin Hooks
+- Data Processing<sup>1</sup>
+- Annotations & Segmentation<sup>1</sup>
+
+> [!NOTE]
+>
+> <sup>1</sup> These are examples of *generative* tooling, where new things are created. Examples include a segmentation or a filtering. In opposition, ndv *should* include "inspective" tooling, which provides additional understanding of (regions of) the dataset. Inspective tooling that ndv has includes Region Selectors, Histograms, Line Profiles, and Lookup Tables.
+
+## Alternatives
+
+There are many existing projects that perform similar functions, with different focuses. We list popular alternatives below:
+
+<!-- I do not know of another viewer that focuses on CHANGING data - could be a limitation of each -->
+
+* [napari](https://github.com/napari/napari) provides interactive data visualization and acts as a unifying platform for a host of third-party plugins.
+  * In practice, we found that napari required too many dependencies for the snappy startup we desired. It also neglects metadata, is tied into the VisPy/Qt pairing of backends, and does not handle changing datasets.
+<!-- Is this event worth mentioning? -->
+* [pyimagej](https://github.com/imagej/pyimagej) is a python wrapper around Fiji/ImageJ, providing data visualization, data processing and a host of third party plugins.
+  * This library faces many of the same issues as napari, with the additional dependency of the JVM slowing visualization down further.
+* [fastplotlib](https://github.com/fastplotlib/fastplotlib) provides plotting tools for data visualization.
+  * This library is tied to pygfx, and is more concerned with data plotting.
