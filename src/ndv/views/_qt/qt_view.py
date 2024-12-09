@@ -356,11 +356,12 @@ class QtHistogramView(QWidget):
         super().__init__(parent)
         self._backend = backend_widget
         self._qwdg = cast(QWidget, self._backend.widget())
+        self._qwdg.setParent(self)
         self._qwdg.installEventFilter(self)
         self._pressed: bool = False
 
         # Log box
-        self._log = QPushButton("Logarithmic")
+        self._log = QPushButton("Logarithmic", self)
         self._log.setToolTip("Toggle logarithmic (base-10) range scaling")
         self._log.setCheckable(True)
         self._log.toggled.connect(self._backend.set_range_log)
