@@ -7,6 +7,9 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.metadata]
+allow-direct-references=true
+
 # read more about configuring hatch at:
 # https://hatch.pypa.io/latest/config/build/
 [tool.hatch.build.targets.wheel]
@@ -41,6 +44,8 @@ dependencies = [
     "numpy >=1.23",
     "psygnal >=0.10",
     "pydantic >=2.9",
+    # TODO: Fix to PyPI before merge
+    "scenex@git+https://github.com/tlambert03/scenex.git",
     "typing_extensions >= 4.0",
 ]
 
