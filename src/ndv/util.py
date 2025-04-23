@@ -51,5 +51,9 @@ def imshow(
     viewer = ArrayViewer(data, display_model, **kwargs)
     viewer.show()
 
+    from rendercanvas.auto import loop
+
+    loop.run()
+
     run_app()
     return viewer

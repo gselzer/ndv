@@ -5,6 +5,7 @@ import warnings
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
+import scenex as snx
 
 from ndv.controllers._channel_controller import ChannelController
 from ndv.models import ArrayDisplayModel, ChannelMode, DataWrapper, LUTModel
@@ -95,19 +96,51 @@ class ArrayViewer:
 
         # get and create the front-end and canvas classes
         frontend_cls = _app.get_array_view_class()
-        canvas_cls = _app.get_array_canvas_class()
-        self._canvas = canvas_cls(self._viewer_model)
+        # canvas_cls = _app.get_array_canvas_class()
+        # self._canvas = canvas_cls(self._viewer_model)
+
+        import numpy as np
+
+        # 2d sine wave
+        X, Y = np.meshgrid(np.linspace(-10, 10, 100), np.linspace(-10, 10, 100))
+        sine_img = (np.sin(X) * np.cos(Y)).astype(np.float32)
+
+        self._image = snx.Image(name="sine image", data=sine_img, clims=(-1, 1))
+        self._snx_view = view = snx.View(
+            blending="default",
+            scene=snx.Scene(
+                children=[
+                    # snx.Image(
+                    #     data=np.random.randint(0, 255, (200, 200)).astype(np.uint8),
+                    #     cmap="viridis",
+                    #     transform=snx.Transform().scaled((1.3, 0.5)).translated((-40, 20)),
+                    #     clims=(0, 255),
+                    #     opacity=0.7,
+                    # ),
+                    snx.Points(
+                        coords=np.random.randint(0, 200, (100, 2)).astype(np.uint8),
+                        size=5,
+                        face_color="coral",
+                        transform=snx.Transform().translated((0, -50)),
+                    ),
+                ]
+            ),
+        )
+
+        self._image.parent = view.scene
+
+        self._canvas_adaptor = snx.show(view)
 
         # TODO: Is this necessary?
         self._histograms: dict[ChannelKey, HistogramCanvas] = {}
         self._view = frontend_cls(
-            self._canvas.frontend_widget(), self._data_model, self._viewer_model
+            self._canvas_adaptor._snx_get_native(), self._data_model, self._viewer_model
         )
 
         self._roi_view: RectangularROIHandle | None = None
 
         self._set_model_connected(self._data_model.display)
-        self._canvas.set_ndim(self.display_model.n_visible_axes)
+        # self._canvas.set_ndim(self.display_model.n_visible_axes)
 
         self._view.currentIndexChanged.connect(self._on_view_current_index_changed)
         self._view.resetZoomClicked.connect(self._on_view_reset_zoom_clicked)
@@ -115,7 +148,7 @@ class ArrayViewer:
         self._view.channelModeChanged.connect(self._on_view_channel_mode_changed)
         self._view.visibleAxesChanged.connect(self._on_view_visible_axes_changed)
 
-        self._canvas.mouseMoved.connect(self._on_canvas_mouse_moved)
+        # self._canvas.mouseMoved.connect(self._on_canvas_mouse_moved)
 
         if self._data_model.data_wrapper is not None:
             self._fully_synchronize_view()
@@ -574,11 +607,16 @@ class ArrayViewer:
             if not lut_ctrl.handles:
                 # we don't yet have any handles for this channel
                 if response.n_visible_axes == 2:
-                    handle = self._canvas.add_image(data)
-                    lut_ctrl.add_handle(handle)
+                    ...
+                    self._image.data = data
+                    self._image.clims = (data.min(), data.max())
+                    print("update image data", data.max())
+                    # handle = self._canvas.add_image(data)
+                    # lut_ctrl.add_handle(handle)
                 elif response.n_visible_axes == 3:
-                    handle = self._canvas.add_volume(data)
-                    lut_ctrl.add_handle(handle)
+                    ...
+                    # handle = self._canvas.add_volume(data)
+                    # lut_ctrl.add_handle(handle)
 
             else:
                 lut_ctrl.update_texture_data(data)
@@ -589,7 +627,11 @@ class ArrayViewer:
                 counts, bin_edges = _calc_hist_bins(data)
                 hist.set_data(counts, bin_edges)
 
-        self._canvas.refresh()
+        from scenex.adaptors.auto import get_adaptor_registry
+
+        reg = get_adaptor_registry()
+        reg.get_adaptor(self._snx_view)
+        reg.get_adaptor(self._snx_view.canvas)
 
     def _get_values_at_world_point(self, x: int, y: int) -> dict[ChannelKey, float]:
         # TODO: handle 3D data

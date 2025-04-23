@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
@@ -3140,6 +3141,7 @@ dependencies = [
     { name = "numpy" },
     { name = "psygnal" },
     { name = "pydantic" },
+    { name = "scenex" },
     { name = "typing-extensions" },
 ]
 
@@ -3287,6 +3289,7 @@ requires-dist = [
     { name = "qtpy", marker = "extra == 'pyqt'", specifier = ">=2" },
     { name = "qtpy", marker = "extra == 'pyside'", specifier = ">=2" },
     { name = "qtpy", marker = "extra == 'qt'", specifier = ">=2" },
+    { name = "scenex", git = "https://github.com/tlambert03/scenex.git" },
     { name = "superqt", extras = ["iconify"], marker = "extra == 'pyqt'", specifier = ">=0.7.2" },
     { name = "superqt", extras = ["iconify"], marker = "extra == 'qt'", specifier = ">=0.7.2" },
     { name = "superqt", extras = ["iconify", "pyside6"], marker = "extra == 'pyside'", specifier = ">=0.7.2" },
@@ -3295,6 +3298,7 @@ requires-dist = [
     { name = "wxpython", marker = "extra == 'wx'", specifier = ">=4.2.2" },
     { name = "wxpython", marker = "extra == 'wxpython'", specifier = ">=4.2.2" },
 ]
+provides-extras = ["jup", "jupyter", "pygfx", "pyqt", "pyside", "qt", "vispy", "wx", "wxpython"]
 
 [package.metadata.requires-dev]
 array-libs = [
@@ -5325,6 +5329,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/51/1432afcc3b7aa6586c480142caae5323d59750925c3559688f2a9867343f/ruff-0.9.5-py3-none-win32.whl", hash = "sha256:134f958d52aa6fdec3b294b8ebe2320a950d10c041473c4316d2e7d7c2544723", size = 9853682 },
     { url = "https://files.pythonhosted.org/packages/b7/ad/c7a900591bd152bb47fc4882a27654ea55c7973e6d5d6396298ad3fd6638/ruff-0.9.5-py3-none-win_amd64.whl", hash = "sha256:78cc6067f6d80b6745b67498fb84e87d32c6fc34992b52bffefbdae3442967d6", size = 10865744 },
     { url = "https://files.pythonhosted.org/packages/75/d9/fde7610abd53c0c76b6af72fc679cb377b27c617ba704e25da834e0a0608/ruff-0.9.5-py3-none-win_arm64.whl", hash = "sha256:18a29f1a005bddb229e580795627d297dfa99f16b30c7039e73278cf6b5f9fa9", size = 10064595 },
+]
+
+[[package]]
+name = "scenex"
+version = "0.1.dev16+g86c6b27"
+source = { git = "https://github.com/tlambert03/scenex.git#86c6b27f2248a4bedbaaaa7c2f5d113739a74de2" }
+dependencies = [
+    { name = "cmap" },
+    { name = "numpy" },
+    { name = "psygnal" },
+    { name = "pydantic" },
 ]
 
 [[package]]
