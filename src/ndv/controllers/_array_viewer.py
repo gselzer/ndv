@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import warnings
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -130,10 +131,6 @@ class ArrayViewer:
 
     # -------------- public attributes and methods -------------------------
 
-    # @property
-    # def view(self) -> ArrayView:
-    #     return self._view
-
     def widget(self) -> Any:
         """Return the native front-end widget.
 
@@ -170,8 +167,38 @@ class ArrayViewer:
         img = snx.Image(data=np.random.randint(0, 255, shape).astype(np.uint16))
         self._data[data_model] = img
         img.parent = self._snx_view.scene
-        self._fully_synchronize_view()
         return img
+
+    @property
+    def data_wrapper(self) -> Any:
+        """Return data being displayed."""
+        return self._data_model.data_wrapper
+
+    @property
+    def data(self) -> Any:
+        """Return data being displayed."""
+        if self._data_model.data_wrapper is None:
+            return None  # pragma: no cover
+        # returning the actual data, not the wrapper
+        return self._data_model.data_wrapper.data
+
+    @data.setter
+    def data(self, data: Any) -> None:
+        """Set the data to be displayed."""
+        self._set_data_wrapper(data)
+        self._fully_synchronize_view()
+
+    def _set_data_wrapper(self, data: Any | None) -> None:
+        """Set new datawrapper and hook up events."""
+        _new = None if data is None else DataWrapper.create(data)
+        self._data_model.data_wrapper, old = _new, self._data_model.data_wrapper
+        if old is not None:
+            with suppress(Exception):
+                old.data_changed.disconnect(self._request_data)
+                old.dims_changed.disconnect(self._fully_synchronize_view)
+        if _new is not None:
+            _new.data_changed.connect(self._request_data)
+            _new.dims_changed.connect(self._fully_synchronize_view)
 
     @property
     def roi(self) -> RectangularROIModel | None:
