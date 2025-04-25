@@ -196,6 +196,8 @@ class ArrayViewer:
 
     def show(self) -> None:
         """Show the viewer."""
+        # FIXME: What if the user sets the camera position before this call?
+        get_adaptor_registry().get_adaptor(self._snx_view.camera)._snx_set_range(0.01)
         self._view.set_visible(True)
 
     def hide(self) -> None:
