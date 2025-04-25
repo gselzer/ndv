@@ -12,6 +12,7 @@ from ndv.views import _app
 
 from ._array_display_model import ArrayDisplayModel, ChannelMode, TwoOrThreeAxisTuple
 from ._base_model import NDVModel
+from ._data_wrapper import DataWrapper  # noqa: TC001
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -26,37 +27,12 @@ if TYPE_CHECKING:
 
     from ndv._types import ChannelKey
 
-    from ._data_wrapper import DataWrapper
 
 __all__ = ["DataRequest", "DataResponse", "_ArrayDataDisplayModel"]
 
 SLOTS = {"slots": True} if sys.version_info >= (3, 10) else {}
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, **SLOTS)
-class DataRequest:
-    """Request object for data slicing."""
-
-    wrapper: _ArrayDataDisplayModel = field(repr=False)
-    index: Mapping[int, int | slice]
-    visible_axes: tuple[int, ...]
-    channel_axis: int | None
-    channel_mode: ChannelMode
-
-
-@dataclass(frozen=True, **SLOTS)
-class DataResponse:
-    """Response object for data requests.
-
-    In the response, the data is broken up according to channel keys.
-    """
-
-    # mapping of channel_key -> data
-    n_visible_axes: int
-    data: Mapping[ChannelKey, np.ndarray] = field(repr=False)
-    request: DataRequest | None = None
 
 
 # NOTE: nobody particularly likes this class.  It does important stuff, but we're
@@ -80,7 +56,7 @@ class _ArrayDataDisplayModel(NDVModel):
     ----------
     display : ArrayDisplayModel
         The display model. Provides instructions for how to display the data.
-    data_wrapper : DataWrapper  | None
+    data_wrapper : DataWrapper | None
         The data wrapper. Provides the actual data to be displayed
     """
 
@@ -299,3 +275,27 @@ class _ArrayDataDisplayModel(NDVModel):
                 data_response[i] = ch_data.transpose(*t_dims).squeeze()
 
         return DataResponse(n_visible_axes=len(vis_ax), data=data_response, request=req)
+
+
+@dataclass(frozen=True, **SLOTS)
+class DataRequest:
+    """Request object for data slicing."""
+
+    wrapper: _ArrayDataDisplayModel = field(repr=False)
+    index: Mapping[int, int | slice]
+    visible_axes: tuple[int, ...]
+    channel_axis: int | None
+    channel_mode: ChannelMode
+
+
+@dataclass(frozen=True, **SLOTS)
+class DataResponse:
+    """Response object for data requests.
+
+    In the response, the data is broken up according to channel keys.
+    """
+
+    # mapping of channel_key -> data
+    n_visible_axes: int
+    data: Mapping[ChannelKey, np.ndarray] = field(repr=False)
+    request: DataRequest | None = None

@@ -95,17 +95,14 @@ class ArrayViewer:
 
         # get and create the front-end and canvas classes
         frontend_cls = _app.get_array_view_class()
-        # canvas_cls = _app.get_array_canvas_class()
-        # self._canvas = canvas_cls(self._viewer_model)
 
-        # self._other_img = snx.Image(data=np.random.randint(0, 65536, (256, 256)).astype(np.uint16))
-        # self._other_img.transform = self._other_img.transform.translated([266, 0, 0])
         self._snx_view = view = snx.View(
             blending="default",
             scene=snx.Scene(children=[]),
         )
         self._data: Mapping[_ArrayDataDisplayModel, snx.Image] = {}
-        self._canvas = snx.Canvas(views=[view])
+        self._canvas = snx.Canvas(width=600, height=600, views=[view])
+        self._canvas.visible = True
 
         # TODO: Is this necessary?
         self._histograms: dict[ChannelKey, HistogramCanvas] = {}
@@ -583,8 +580,6 @@ class ArrayViewer:
                     img = self._data[response.request.wrapper]
                     img.data = data
                     img.clims = (data.min(), data.max())
-                    # self._other_img.data = data
-                    # self._other_img.clims = (data.min(), data.max())
                     print("update image data", data.max())
                     # handle = self._canvas.add_image(data)
                     # lut_ctrl.add_handle(handle)

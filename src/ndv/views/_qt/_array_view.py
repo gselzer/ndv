@@ -657,6 +657,8 @@ class _QArrayViewer(QWidget):
         super().__init__(parent)
 
         self._canvas_widget = canvas_widget
+        # FIXME: See the canvas when starting
+        self._canvas_widget.setMinimumSize(500, 500)
         self.dims_sliders = _QDimsSliders(self)
 
         # place to display dataset summary
