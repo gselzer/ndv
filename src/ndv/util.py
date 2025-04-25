@@ -11,19 +11,19 @@ if TYPE_CHECKING:
     from typing import Any, Unpack
 
     from .models._array_display_model import ArrayDisplayModel, ArrayDisplayModelKwargs
-    from .models._data_wrapper import DataWrapper
+    from .models._data_wrapper import _ArrayDataDisplayModel
 
 
 @overload
 def imshow(
-    data: Any | DataWrapper, /, display_model: ArrayDisplayModel = ...
+    data: Any | _ArrayDataDisplayModel, /, display_model: ArrayDisplayModel = ...
 ) -> ArrayViewer: ...
 @overload
 def imshow(
-    data: Any | DataWrapper, /, **kwargs: Unpack[ArrayDisplayModelKwargs]
+    data: Any | _ArrayDataDisplayModel, /, **kwargs: Unpack[ArrayDisplayModelKwargs]
 ) -> ArrayViewer: ...
 def imshow(
-    data: Any | DataWrapper,
+    data: Any | _ArrayDataDisplayModel,
     /,
     display_model: ArrayDisplayModel | None = None,
     **kwargs: Unpack[ArrayDisplayModelKwargs],

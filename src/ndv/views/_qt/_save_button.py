@@ -7,13 +7,13 @@ from qtpy.QtWidgets import QFileDialog, QPushButton, QWidget
 from superqt.iconify import QIconifyIcon
 
 if TYPE_CHECKING:
-    from ndv.models import DataWrapper
+    from ndv.models import _ArrayDataDisplayModel
 
 
 class SaveButton(QPushButton):
     def __init__(
         self,
-        data_wrapper: DataWrapper,
+        data_wrapper: _ArrayDataDisplayModel,
         parent: QWidget | None = None,
     ):
         super().__init__(parent=parent)

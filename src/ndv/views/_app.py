@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 GUI_ENV_VAR = "NDV_GUI_FRONTEND"
 """Preferred GUI frontend. If not set, the first available GUI frontend is used."""
 
-CANVAS_ENV_VAR = "NDV_CANVAS_BACKEND"
+CANVAS_ENV_VAR = "SCNENEX_CANVAS_BACKEND"
 """Preferred canvas backend. If not set, the first available canvas backend is used."""
 
 

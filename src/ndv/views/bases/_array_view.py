@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Container, Hashable, Mapping, Sequence
 
     from ndv._types import AxisKey, ChannelKey
-    from ndv.models._data_display_model import _ArrayDataDisplayModel
+    from ndv.models._array_display_model import ArrayDisplayModel
     from ndv.models._viewer_model import ArrayViewerModel
     from ndv.views.bases import LutView
 
@@ -38,7 +38,7 @@ class ArrayView(Viewable):
     def __init__(
         self,
         canvas_widget: Any,
-        model: _ArrayDataDisplayModel,
+        model: ArrayDisplayModel,
         viewer_model: ArrayViewerModel,
         **kwargs: Any,
     ) -> None: ...

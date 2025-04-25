@@ -37,7 +37,7 @@ from superqt.iconify import QIconifyIcon
 from superqt.utils import signals_blocked
 
 from ndv._types import AxisKey
-from ndv.models._array_display_model import ChannelMode
+from ndv.models._array_display_model import ArrayDisplayModel, ChannelMode
 from ndv.models._lut_model import ClimPolicy, ClimsManual, ClimsPercentile
 from ndv.models._viewer_model import ArrayViewerModel, InteractionMode
 from ndv.views.bases import ArrayView, LutView
@@ -50,7 +50,6 @@ if TYPE_CHECKING:
     from qtpy.QtGui import QIcon
 
     from ndv._types import AxisKey, ChannelKey
-    from ndv.models._data_display_model import _ArrayDataDisplayModel
     from ndv.views.bases._graphics._canvas import HistogramCanvas
     from ndv.views.bases._graphics._canvas_elements import (
         CanvasElement,
@@ -757,7 +756,7 @@ class QtArrayView(ArrayView):
     def __init__(
         self,
         canvas_widget: QWidget,
-        data_model: _ArrayDataDisplayModel,
+        data_model: ArrayDisplayModel,
         viewer_model: ArrayViewerModel,
     ) -> None:
         self._data_model = data_model
@@ -825,8 +824,9 @@ class QtArrayView(ArrayView):
                 self._visible_axes = self._visible_axes[-2:]
         else:
             z_ax = None
-            if wrapper := self._data_model.data_wrapper:
-                z_ax = wrapper.guess_z_axis()
+            # FIXME: Make work again
+            # if wrapper := self._data_model.data_wrapper:
+            #     z_ax = wrapper.guess_z_axis()
             if z_ax is None:
                 # get the last slider that is not in visible axes
                 sld = reversed(self._qwidget.dims_sliders._sliders)

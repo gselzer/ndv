@@ -1,25 +1,32 @@
+from __future__ import annotations
+
 import logging
 import sys
-from collections.abc import (
-    Hashable,
-    Iterator,
-    Mapping,
-    MutableMapping,
-    Sequence,
-)
 from concurrent.futures import Future
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
 from pydantic import Field
 
-from ndv._types import ChannelKey
 from ndv.views import _app
 
 from ._array_display_model import ArrayDisplayModel, ChannelMode, TwoOrThreeAxisTuple
 from ._base_model import NDVModel
-from ._data_wrapper import DataWrapper
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Hashable,
+        Iterator,
+        Mapping,
+        MutableMapping,
+        Sequence,
+    )
+
+    import numpy as np
+
+    from ndv._types import ChannelKey
+
+    from ._data_wrapper import DataWrapper
 
 __all__ = ["DataRequest", "DataResponse", "_ArrayDataDisplayModel"]
 
@@ -32,10 +39,10 @@ logger = logging.getLogger(__name__)
 class DataRequest:
     """Request object for data slicing."""
 
-    wrapper: DataWrapper = field(repr=False)
-    index: Mapping[int, Union[int, slice]]
+    wrapper: _ArrayDataDisplayModel = field(repr=False)
+    index: Mapping[int, int | slice]
     visible_axes: tuple[int, ...]
-    channel_axis: Optional[int]
+    channel_axis: int | None
     channel_mode: ChannelMode
 
 
@@ -49,7 +56,7 @@ class DataResponse:
     # mapping of channel_key -> data
     n_visible_axes: int
     data: Mapping[ChannelKey, np.ndarray] = field(repr=False)
-    request: Optional[DataRequest] = None
+    request: DataRequest | None = None
 
 
 # NOTE: nobody particularly likes this class.  It does important stuff, but we're
@@ -78,7 +85,11 @@ class _ArrayDataDisplayModel(NDVModel):
     """
 
     display: ArrayDisplayModel = Field(default_factory=ArrayDisplayModel)
-    data_wrapper: Optional[DataWrapper] = None
+    data_wrapper: DataWrapper | None = None
+
+    # HACK
+    def __hash__(self) -> int:
+        return hash(self.data_wrapper)
 
     def model_post_init(self, __context: Any) -> None:
         # connect the channel mode change signal to the channel axis guessing method
@@ -130,7 +141,7 @@ class _ArrayDataDisplayModel(NDVModel):
         return {wrapper.normalize_axis_key(d): wrapper.coords[d] for d in wrapper.dims}
 
     @property
-    def normed_visible_axes(self) -> "tuple[int, int, int] | tuple[int, int]":
+    def normed_visible_axes(self) -> tuple[int, int, int] | tuple[int, int]:
         """Return the visible axes as positive integers."""
         wrapper = self._ensure_wrapper()
         return tuple(  # type: ignore [return-value]
@@ -138,7 +149,7 @@ class _ArrayDataDisplayModel(NDVModel):
         )
 
     @property
-    def normed_current_index(self) -> Mapping[int, Union[int, slice]]:
+    def normed_current_index(self) -> Mapping[int, int | slice]:
         """Return the current index with positive integer axis keys.
 
         This method has to handle cases where the the model current index is expressed
@@ -154,7 +165,7 @@ class _ArrayDataDisplayModel(NDVModel):
         """
         wrapper = self._ensure_wrapper()
 
-        output: MutableMapping[int, Union[int, slice]] = {}
+        output: MutableMapping[int, int | slice] = {}
         rev_map: dict[Hashable, Hashable] = {}
         to_remove: list[Hashable] = []
 
@@ -190,7 +201,7 @@ class _ArrayDataDisplayModel(NDVModel):
         return output
 
     @property
-    def normed_channel_axis(self) -> "int | None":
+    def normed_channel_axis(self) -> int | None:
         """Return the channel axis as positive integers."""
         if self.display.channel_axis is None:
             return None
@@ -237,7 +248,7 @@ class _ArrayDataDisplayModel(NDVModel):
                 requested_slice[ax] = slice(val, val + 1)
 
         request = DataRequest(
-            wrapper=self.data_wrapper,
+            wrapper=self,
             index=requested_slice,
             visible_axes=self.normed_visible_axes,
             channel_axis=c_ax,
@@ -267,7 +278,7 @@ class _ArrayDataDisplayModel(NDVModel):
     @staticmethod
     def process_request(req: DataRequest) -> DataResponse:
         """Process a data request and return the sliced data as a DataResponse."""
-        data = req.wrapper.isel(req.index)
+        data = req.wrapper.data_wrapper.isel(req.index)
 
         # for transposing according to the order of visible axes
         vis_ax = req.visible_axes
