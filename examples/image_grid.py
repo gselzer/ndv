@@ -11,7 +11,7 @@ import os
 import ndv
 
 os.environ["SCENEX_CANVAS_BACKEND"] = "pygfx"
-viewer = ndv.ArrayViewer()
+viewer = ndv.ArraysViewer()
 viewer._async = False
 
 data = ndv.data.cells3d()
