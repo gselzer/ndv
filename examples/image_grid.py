@@ -12,7 +12,6 @@ import ndv
 
 os.environ["SCENEX_CANVAS_BACKEND"] = "pygfx"
 viewer = ndv.ArraysViewer()
-viewer._async = False
 
 data = ndv.data.cells3d()
 for i in range(4):
