@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import scenex as snx
-from scenex.adaptors.auto import get_adaptor_registry
+from scenex.adaptors import get_adaptor_registry
 
 from ndv.controllers._channel_controller import ChannelController
 from ndv.models import ArrayDisplayModel, ChannelMode, DataWrapper, LUTModel
@@ -194,7 +194,7 @@ class ArraysViewer:
     def show(self) -> None:
         """Show the viewer."""
         # FIXME: What if the user sets the camera position before this call?
-        get_adaptor_registry().get_adaptor(self._snx_view.camera)._snx_set_range(0.01)
+        get_adaptor_registry().get_adaptor(self._snx_view.camera)._snx_zoom_to_fit(0.01)
         self._view.set_visible(True)
 
     def hide(self) -> None:

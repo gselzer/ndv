@@ -6,11 +6,9 @@
 # ///
 from __future__ import annotations
 
-import os
-
 import ndv
 
-os.environ["SCENEX_CANVAS_BACKEND"] = "pygfx"
+ndv.set_canvas_backend("pygfx")
 viewer = ndv.ArraysViewer()
 
 data = ndv.data.cells3d()
