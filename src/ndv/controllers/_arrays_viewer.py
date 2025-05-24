@@ -435,7 +435,7 @@ class ArraysViewer:
 
     def _on_view_reset_zoom_clicked(self) -> None:
         """Reset the zoom level of the canvas."""
-        get_adaptor_registry().get_adaptor(self._snx_view.camera)._snx_set_range(0)
+        get_adaptor_registry().get_adaptor(self._snx_view.camera)._snx_zoom_to_fit(0)
 
     def _on_roi_view_bounding_box_changed(
         self, bb: tuple[tuple[float, float], tuple[float, float]]
