@@ -56,13 +56,16 @@ class CanvasBackend(str, Enum):
     Attributes
     ----------
     VISPY : str
-        [Vispy](https://vispy.org)
+        [VisPy](https://vispy.org) — rendered via Scenex
     PYGFX : str
-        [Pygfx](https://github.com/pygfx/pygfx)
+        [Pygfx](https://github.com/pygfx/pygfx) — rendered via Scenex
+    SCENEX : str
+        [Scenex](https://github.com/gselzer/scenex)
     """
 
     VISPY = "vispy"
     PYGFX = "pygfx"
+    SCENEX = "scenex"
 
 
 class CanvasProvider(Protocol):
@@ -76,63 +79,26 @@ class CanvasProvider(Protocol):
     def histogram_canvas_class() -> type[HistogramCanvas]: ...
 
 
-class VispyProvider(CanvasProvider):
+class ScenexProvider(CanvasProvider):
     @staticmethod
     def is_imported() -> bool:
-        return "vispy" in sys.modules
+        return "scenex" in sys.modules
 
     @staticmethod
     def is_available() -> bool:
-        return importlib.util.find_spec("vispy") is not None
+        return importlib.util.find_spec("scenex") is not None
 
     @staticmethod
     def array_canvas_class() -> type[ArrayCanvas]:
-        from vispy.app import use_app
+        from ndv.views._scenex._array_canvas import ScenexArrayCanvas
 
-        from ndv.views._vispy._array_canvas import VispyArrayCanvas
-
-        # these may not be necessary, since we likely have already called
-        # create_app by this point and vispy will autodetect that.
-        # it's an extra precaution
-        _frontend = gui_frontend()
-        if _frontend == GuiFrontend.JUPYTER:
-            use_app("jupyter_rfb")
-        elif _frontend == GuiFrontend.WX:
-            use_app("wx")
-        elif _frontend == GuiFrontend.QT:
-            from qtpy import API_NAME
-
-            use_app(API_NAME.lower())
-
-        return VispyArrayCanvas
+        return ScenexArrayCanvas
 
     @staticmethod
     def histogram_canvas_class() -> type[HistogramCanvas]:
-        from ndv.views._vispy._histogram import VispyHistogramCanvas
+        from ndv.views._scenex._histogram import ScenexHistogramCanvas
 
-        return VispyHistogramCanvas
-
-
-class PygfxProvider(CanvasProvider):
-    @staticmethod
-    def is_imported() -> bool:
-        return "pygfx" in sys.modules
-
-    @staticmethod
-    def is_available() -> bool:
-        return importlib.util.find_spec("pygfx") is not None
-
-    @staticmethod
-    def array_canvas_class() -> type[ArrayCanvas]:
-        from ndv.views._pygfx._array_canvas import GfxArrayCanvas
-
-        return GfxArrayCanvas
-
-    @staticmethod
-    def histogram_canvas_class() -> type[HistogramCanvas]:
-        from ndv.views._pygfx._histogram import PyGFXHistogramCanvas
-
-        return PyGFXHistogramCanvas
+        return ScenexHistogramCanvas
 
 
 # -------------------- Provider selection --------------------
@@ -146,8 +112,9 @@ GUI_PROVIDERS: dict[GuiFrontend, tuple[str, str]] = {
 }
 MOD_TO_KEY = {mod: key for key, (mod, _) in GUI_PROVIDERS.items()}
 CANVAS_PROVIDERS: dict[CanvasBackend, CanvasProvider] = {
-    CanvasBackend.VISPY: VispyProvider,
-    CanvasBackend.PYGFX: PygfxProvider,
+    CanvasBackend.VISPY: ScenexProvider,
+    CanvasBackend.PYGFX: ScenexProvider,
+    CanvasBackend.SCENEX: ScenexProvider,
 }
 
 
@@ -224,7 +191,7 @@ def ndv_app() -> NDVApp:
     )
 
 
-def set_canvas_backend(backend: Literal["pygfx", "vispy"] | None = None) -> None:
+def set_canvas_backend(backend: Literal["scenex", "vispy", "pygfx"] | None = None) -> None:
     """Sets the preferred canvas backend. Cannot be set after the GUI is running."""
     if _APP:
         raise RuntimeError("Cannot change the backend once the app is running")

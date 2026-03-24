@@ -20,8 +20,6 @@ if TYPE_CHECKING:
 
     from psygnal import EmissionInfo
     from traitlets import HasTraits
-    from vispy.app.backends import _jupyter_rfb
-
     from ndv._types import AxisKey, ChannelKey
     from ndv.views.bases._graphics._canvas import HistogramCanvas
 
@@ -385,7 +383,7 @@ SPIN_GIF = str(Path(__file__).parent.parent / "_resources" / "spin.gif")
 class JupyterArrayView(ArrayView):
     def __init__(
         self,
-        canvas_widget: _jupyter_rfb.CanvasBackend,
+        canvas_widget: Any,
         viewer_model: ArrayViewerModel,
     ) -> None:
         self._viewer_model = viewer_model

@@ -42,7 +42,6 @@ except ImportError:
 
 IS_WIN = os.name == "nt"
 IS_PYSIDE6 = API_NAME == "PySide6"
-IS_PYGFX = _app.canvas_backend(None) == "pygfx"
 
 
 def _make_img_handle() -> MagicMock:
@@ -319,9 +318,6 @@ def test_channel_autoscale() -> None:
     mock_viewer.set_clims.assert_called_once_with((mi, ma))
 
 
-@pytest.mark.skipif(
-    bool(IS_WIN and IS_PYSIDE6 and IS_PYGFX), reason="combo still segfaulting on CI"
-)
 @pytest.mark.usefixtures("any_app")
 def test_array_viewer_histogram() -> None:
     """Mostly a smoke test for basic functionality of histogram backends."""
@@ -333,9 +329,8 @@ def test_array_viewer_histogram() -> None:
     assert histogram is not None
 
     # change views
-    if "pygfx" not in type(histogram).__name__.lower():
-        histogram.set_vertical(True)
-        histogram.set_log_base(10)
+    histogram.set_vertical(True)
+    histogram.set_log_base(10)
 
     # update data
     np.random.seed(0)

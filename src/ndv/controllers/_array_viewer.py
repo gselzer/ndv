@@ -24,6 +24,8 @@ from ndv.models._resolve import (
 from ndv.models._roi_model import RectangularROIModel
 from ndv.models._viewer_model import ArrayViewerModel, InteractionMode
 from ndv.views import _app
+from ndv.views._scenex._array_canvas import ScenexArrayCanvas
+from ndv.views._scenex._histogram import ScenexHistogramCanvas
 
 if TYPE_CHECKING:
     from typing import Any
@@ -116,8 +118,7 @@ class ArrayViewer:
 
         # get and create the front-end and canvas classes
         frontend_cls = _app.get_array_view_class()
-        canvas_cls = _app.get_array_canvas_class()
-        self._canvas = canvas_cls(self._viewer_model)
+        self._canvas = ScenexArrayCanvas(self._viewer_model)
 
         # TODO: Is this necessary?
         self._histograms: dict[ChannelKey, HistogramCanvas] = {}
@@ -278,8 +279,7 @@ class ArrayViewer:
         return ArrayDisplayModel(**kwargs)
 
     def _add_histogram(self, channel: ChannelKey = None) -> None:
-        histogram_cls = _app.get_histogram_canvas_class()  # will raise if not supported
-        hist = histogram_cls()
+        hist = ScenexHistogramCanvas()
         if ctrl := self._lut_controllers.get(channel, None):
             # Add histogram to ArrayView for display
             self._view.add_histogram(channel, hist)
