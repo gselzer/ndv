@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from psygnal import EmissionInfo
     from traitlets import HasTraits
+
     from ndv._types import AxisKey, ChannelKey
     from ndv.views.bases._graphics._canvas import HistogramCanvas
 

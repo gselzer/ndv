@@ -11,26 +11,18 @@ from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
+import scenex as snx
+from scenex.app.events import MouseButton, MouseLeaveEvent, MouseMoveEvent
 
-from ndv._types import (
-    CursorType,
-    MouseButton,
-    MouseMoveEvent,
-    MousePressEvent,
-    MouseReleaseEvent,
-)
 from ndv.controllers import ArrayViewer
 from ndv.controllers._channel_controller import ChannelController
 from ndv.models import DataWrapper
 from ndv.models._array_display_model import ArrayDisplayModel, ChannelMode
 from ndv.models._lut_model import ClimsManual, ClimsMinMax, LUTModel
 from ndv.models._resolve import DataResponse, resolve
-from ndv.models._roi_model import RectangularROIModel
-from ndv.models._viewer_model import InteractionMode
 from ndv.views import _app, gui_frontend
+from ndv.views._histogram import Histogram
 from ndv.views.bases import ArrayView, LUTView
-from ndv.views.bases._graphics._canvas import ArrayCanvas, HistogramCanvas
-from ndv.views.bases._graphics._canvas_elements import ImageHandle
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -44,27 +36,8 @@ IS_WIN = os.name == "nt"
 IS_PYSIDE6 = API_NAME == "PySide6"
 
 
-def _make_img_handle() -> MagicMock:
-    handle = MagicMock(spec=ImageHandle)
-    handle.data.return_value = np.zeros((10, 10)).astype(np.uint8)
-    return handle
-
-
-def _make_vol_handle() -> MagicMock:
-    handle = MagicMock(spec=ImageHandle)
-    handle.data.return_value = np.zeros((10, 10, 10)).astype(np.uint8)
-    return handle
-
-
-def _get_mock_canvas(*_: Any) -> ArrayCanvas:
-    mock = MagicMock(spec=ArrayCanvas)
-    mock.add_image.side_effect = lambda *a, **k: _make_img_handle()
-    mock.add_volume.side_effect = lambda *a, **k: _make_vol_handle()
-    return mock
-
-
-def _get_mock_hist_canvas() -> HistogramCanvas:
-    return MagicMock(spec=HistogramCanvas)
+def _get_mock_hist_canvas() -> Histogram:
+    return MagicMock(spec=Histogram)
 
 
 def _get_mock_view(*_: Any) -> ArrayView:
@@ -74,9 +47,7 @@ def _get_mock_view(*_: Any) -> ArrayView:
 
 
 def _patch_views(f: Callable) -> Callable:
-    f = patch.object(_app, "get_array_canvas_class", lambda: _get_mock_canvas)(f)
     f = patch.object(_app, "get_array_view_class", lambda: _get_mock_view)(f)
-    f = patch.object(_app, "get_histogram_canvas_class", lambda: _get_mock_hist_canvas)(f)  # fmt: skip # noqa
     f = patch.object(_app, "filter_key_events", lambda *a, **k: lambda: None)(f)
     return f
 
@@ -151,65 +122,61 @@ def test_controller() -> None:
 @_patch_views
 def test_canvas_interaction() -> None:
     SHAPE = (10, 4, 10, 10)
-    data = np.empty(SHAPE)
+    data = np.zeros(SHAPE)
     ctrl = ArrayViewer()
     ctrl._async = False
-    mock_canvas = ctrl._canvas
+    canvas = ctrl._canvas
 
     mock_view = ctrl._view
     ctrl.data = data
 
     ctrl._add_histogram(None)
-    mock_histogram = ctrl._histograms[None]
+    histogram = ctrl._histograms[None]
 
-    # clicking the reset zoom button calls set_range on the canvas
+    # clicking the reset zoom button calls reset_zoom on the canvas
+    tform_before = canvas.view.camera.transform
+    canvas.view.camera.transform = tform_before.translated([1e6, 1e6, 1e6])
     ctrl._on_view_reset_zoom_clicked()
-    mock_canvas.set_range.assert_called_once_with()
+    assert tform_before == canvas.view.camera.transform
 
     # hovering on the image updates the hover info in the view
-    mock_canvas.canvas_to_world.return_value = (1, 2, 3)
-    ctrl._on_canvas_mouse_moved(MouseMoveEvent(1, 2))
-    mock_canvas.canvas_to_world.assert_called_once_with((1, 2))
-    mock_view.set_hover_info.assert_called_once_with("[2, 1] 0")
-    mock_histogram.highlight.assert_called_once_with(0)
-
-    mock_canvas.reset_mock()
     mock_view.reset_mock()
-    mock_histogram.reset_mock()
+    pos = (canvas._canvas.width // 2, canvas._canvas.height // 2)
+    ctrl._view_event(MouseMoveEvent(pos=pos, buttons=MouseButton.NONE))
+    world_pos = canvas.view.to_ray(pos).origin[:2]
+    y, x = int(world_pos[1]), int(world_pos[0])
+    mock_view.set_hover_info.assert_called_once_with(f"[{y}, {x}] 0")
+    assert histogram.highlight_line.transform.root[3, 0] == 0
 
+    mock_view.reset_mock()
     # updating the image also updates the hover info in the view
     # NB Since the image handle is a mock, the data won't be updated.
-    ctrl.data = np.empty(SHAPE, dtype=np.uint8)
+    ctrl.data = np.ones(SHAPE, dtype=np.uint8)
     # FIXME: These methods are actually called twice, both within
     # _fully_synchronize_view. The first time is on
     # ArrayViewer._on_view_current_index_change, and the second on
     # ArrayViewer._request_data
-    mock_view.set_hover_info.assert_called_with("[2, 1] 0")
-    mock_histogram.highlight.assert_called_with(0)
+    mock_view.set_hover_info.assert_called_once_with(f"[{y}, {x}] 1")
+    assert histogram.highlight_line.transform.root[3, 0] == 1
 
-    mock_canvas.reset_mock()
     mock_view.reset_mock()
-    mock_histogram.reset_mock()
 
     # hovering off the image clears the hover info in the view
-    mock_canvas.canvas_to_world.return_value = (-1, -1, 3)
-    ctrl._on_canvas_mouse_moved(MouseMoveEvent(-1, -1))
-    mock_canvas.canvas_to_world.assert_called_once_with((-1, -1))
+    ctrl._view_event(MouseMoveEvent(pos=(0, 0), buttons=MouseButton.NONE))
     mock_view.set_hover_info.assert_called_once_with("")
-    mock_histogram.highlight.assert_called_once_with(None)
+    assert not histogram.highlight_line.visible
 
-    mock_canvas.reset_mock()
     mock_view.reset_mock()
-    mock_histogram.reset_mock()
 
     # leaving the canvas clears the hover info as well
-    ctrl._on_canvas_mouse_left()
+    ctrl._view_event(MouseLeaveEvent())
     mock_view.set_hover_info.assert_called_once_with("")
-    mock_histogram.highlight.assert_called_once_with(None)
+    assert not histogram.highlight_line.visible
 
 
 @no_type_check
 @_patch_views
+@patch("ndv.controllers._array_viewer.Histogram", _get_mock_hist_canvas)
 def test_histogram_controller() -> None:
     ctrl = ArrayViewer()
     ctrl._async = False
@@ -240,7 +207,7 @@ def test_histogram_updates_on_first_draw() -> None:
     """Histogram should update even when the first response creates the handle."""
     ctrl = ArrayViewer()
 
-    ctrl._histograms[None] = hist = MagicMock(spec=HistogramCanvas)
+    ctrl._histograms[None] = hist = MagicMock(spec=Histogram)
     ctrl._lut_controllers[None] = ChannelController(
         key=None, lut_model=LUTModel(), views=[MagicMock(spec=LUTView), hist]
     )
@@ -299,9 +266,9 @@ def test_channel_autoscale() -> None:
     # NB: Use a planar dataset so we can manually compute the min/max
     data = np.random.randint(0, 255, size=(10, 10), dtype="uint8")
     mi, ma = np.nanmin(data), np.nanmax(data)
-    handle = MagicMock(spec=ImageHandle)
-    handle.data.return_value = data
-    ctrl.add_handle(handle)
+    handle = MagicMock(spec=snx.Image)
+    handle.data = data
+    ctrl.add_image(handle)
 
     # Test some random LutController
     lut_model = ctrl.lut_model
@@ -329,7 +296,6 @@ def test_array_viewer_histogram() -> None:
     assert histogram is not None
 
     # change views
-    histogram.set_vertical(True)
     histogram.set_log_base(10)
 
     # update data
@@ -341,127 +307,6 @@ def test_array_viewer_histogram() -> None:
     histogram.set_data(counts, bin_edges)
 
     histogram.close()
-
-
-@no_type_check
-@pytest.mark.usefixtures("any_app")
-def test_roi_controller() -> None:
-    ctrl = ArrayViewer()
-    ctrl.show()
-    _app.process_events()
-    roi = RectangularROIModel()
-    viewer = ctrl._viewer_model
-
-    # Until a user interacts with ctrl.roi, there is no ROI model
-    assert ctrl._roi_model is None
-    ctrl.roi = roi
-    assert ctrl._roi_model is not None
-
-    # Clicking the ROI button and then clicking the canvas creates a ROI
-    viewer.interaction_mode = InteractionMode.CREATE_ROI
-    canvas_pos = (5, 5)
-    mpe = MousePressEvent(canvas_pos[0], canvas_pos[1], MouseButton.LEFT)
-
-    # Note - avoid diving into rendering logic here - just identify view
-    with patch.object(ctrl._canvas, "elements_at", return_value=[ctrl._roi_view]):
-        ctrl._canvas.on_mouse_press(mpe)
-    world_pos = ctrl._canvas.canvas_to_world(canvas_pos)
-
-    assert roi.bounding_box == (
-        (world_pos[0], world_pos[1]),
-        (world_pos[0] + 1, world_pos[1] + 1),
-    )
-    assert viewer.interaction_mode == InteractionMode.PAN_ZOOM
-    ctrl._canvas.close()
-
-
-@no_type_check
-@pytest.mark.usefixtures("any_app")
-def test_roi_interaction() -> None:
-    if _app.gui_frontend() == _app.GuiFrontend.JUPYTER and IS_PYGFX:
-        pytest.skip("Invalid canvas size on CI")
-        return
-
-    ctrl = ArrayViewer()
-    ctrl.show()
-    _app.process_events()
-    roi = RectangularROIModel()
-    ctrl.roi = roi
-    roi_view = ctrl._roi_view
-    assert roi_view is not None
-
-    # FIXME: We need a large world space on the canvas, but
-    # VispyArrayCanvas.set_range is not implemented yet. This workaround
-    # sets the range to the extent of the data i.e. the extent of the ROI
-    roi.bounding_box = ((0, 0), (500, 500))
-    ctrl._canvas.set_range()
-    # Note that these positions are far apart to satisfy sufficient distance
-    # in world space
-    canvas_roi_start = (200, 200)
-    world_roi_start = tuple(ctrl._canvas.canvas_to_world(canvas_roi_start)[:2])
-    canvas_new_start = (100, 100)
-    world_new_start = tuple(ctrl._canvas.canvas_to_world(canvas_new_start)[:2])
-    canvas_roi_end = (300, 300)
-    world_roi_end = tuple(ctrl._canvas.canvas_to_world(canvas_roi_end)[:2])
-    roi.bounding_box = (world_roi_start, world_roi_end)
-
-    # Note - avoid diving into rendering logic here - just identify view
-    with patch.object(ctrl._canvas, "elements_at", return_value=[ctrl._roi_view]):
-        # Test moving handle
-        assert not roi_view.selected()
-        mpe = MousePressEvent(
-            canvas_roi_start[0], canvas_roi_start[1], MouseButton.LEFT
-        )
-        ctrl._canvas.on_mouse_press(mpe)
-        assert roi_view.selected()
-        mme = MouseMoveEvent(canvas_new_start[0], canvas_new_start[1], MouseButton.LEFT)
-        ctrl._canvas.on_mouse_move(mme)
-        assert roi.bounding_box[0] == pytest.approx(world_new_start, 1e-6)
-        assert roi.bounding_box[1] == pytest.approx(world_roi_end, 1e-6)
-        mre = MouseReleaseEvent(
-            canvas_new_start[0], canvas_new_start[1], MouseButton.LEFT
-        )
-        ctrl._canvas.on_mouse_release(mre)
-
-        # Test translation
-        roi.bounding_box = (world_roi_start, world_roi_end)
-        mpe = MousePressEvent(
-            (canvas_roi_start[0] + canvas_roi_end[0] / 2),
-            (canvas_roi_start[1] + canvas_roi_end[1] / 2),
-            MouseButton.LEFT,
-        )
-        ctrl._canvas.on_mouse_press(mpe)
-        assert roi_view.selected()
-        mme = MouseMoveEvent(
-            (canvas_roi_start[0] + canvas_new_start[0] / 2),
-            (canvas_roi_start[1] + canvas_new_start[1] / 2),
-            MouseButton.LEFT,
-        )
-        ctrl._canvas.on_mouse_move(mme)
-        assert roi.bounding_box[0] == pytest.approx(world_new_start, 1e-6)
-        assert roi.bounding_box[1] == pytest.approx(world_roi_start, 1e-6)
-        mre = MouseReleaseEvent(
-            (canvas_roi_start[0] + canvas_new_start[0] / 2),
-            (canvas_roi_start[1] + canvas_new_start[1] / 2),
-            MouseButton.LEFT,
-        )
-        ctrl._canvas.on_mouse_release(mre)
-
-    # Test cursors
-    roi.bounding_box = (world_roi_start, world_roi_end)
-    # Top-Left corner
-    mme = MouseMoveEvent(canvas_roi_start[0], canvas_roi_start[1])
-    assert roi_view.get_cursor(mme) == CursorType.FDIAG_ARROW
-    # Top-Right corner
-    mme = MouseMoveEvent(canvas_roi_start[0], canvas_roi_end[1])
-    assert roi_view.get_cursor(mme) == CursorType.BDIAG_ARROW
-    # Middle
-    mme = MouseMoveEvent(
-        (canvas_roi_start[0] + canvas_roi_end[0]) / 2,
-        (canvas_roi_start[1] + canvas_roi_end[1]) / 2,
-    )
-    assert roi_view.get_cursor(mme) == CursorType.ALL_ARROW
-    ctrl._canvas.close()
 
 
 @pytest.mark.allow_leaks
@@ -506,17 +351,20 @@ def test_stale_response_discard() -> None:
     ctrl = ArrayViewer()
 
     # simulate a stale response from generation 1 when we're on generation 2
-    old_response = DataResponse(n_visible_axes=2, data={None: np.zeros((8, 8))})
-    future = Future()
-    future.set_result(old_response)
+    future: Future[DataResponse] = Future()
+    future.result = Mock(  # type: ignore[method-assign]
+        side_effect=AssertionError("result() must not be called on stale future")
+    )
     ctrl._current_gen = 2
     ctrl._futures[future] = 1  # old generation
 
     ctrl._on_data_response_ready(future)
 
-    # stale response should be ignored — no LUT controllers created, no refresh
+    # stale response should be ignored — no LUT controllers created, no images
     assert len(ctrl._lut_controllers) == 0
-    ctrl._canvas.refresh.assert_not_called()
+    scene = ctrl._canvas.view.scene
+    data_nodes = [node for node in scene.children if isinstance(node, snx.Image)]
+    assert len(data_nodes) == 0
 
 
 @no_type_check
