@@ -137,7 +137,7 @@ class RectangularROI(EventedBase):
         self.rect_mesh = Mesh(
             vertices=vertices,
             faces=np.array([[0, 1, 2], [0, 2, 3]]),
-            color=UniformColor(color=cmap.Color("royalblue")),
+            color=UniformColor(color=cmap.Color((0, 0, 0, 0))),
             opacity=0.25,
             order=1,
         )
@@ -145,7 +145,7 @@ class RectangularROI(EventedBase):
         self.rect_line = Line(
             parent=self.rect_mesh,
             vertices=vertices[[0, 1, 2, 3, 0]],
-            color=UniformColor(color=cmap.Color("royalblue")),
+            color=UniformColor(color=cmap.Color("yellow")),
             width=2.0,
             order=2,
         )
