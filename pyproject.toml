@@ -63,8 +63,8 @@ pyside = [
 wxpython = ["pyconify>=0.2.1", "wxpython >=4.2.2"]
 
 # Supported Canvas backends
-vispy = ["scenex[vispy] @ git+https://github.com/gselzer/scenex.git@canvas-events"]
-pygfx = ["scenex[pygfx] @ git+https://github.com/gselzer/scenex.git@canvas-events"]
+vispy = ["scenex[vispy] @ git+https://github.com/pyapp-kit/scenex.git"]
+pygfx = ["scenex[pygfx] @ git+https://github.com/pyapp-kit/scenex.git"]
 
 # ready to go bundles with pygfx
 qt = ["ndv[pygfx,pyqt]", "imageio[tifffile] >=2.20"]
