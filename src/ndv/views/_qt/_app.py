@@ -4,7 +4,6 @@ import sys
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from qtpy.QtCore import QEvent, QObject, Qt, QTimer
-from qtpy.QtGui import QKeyEvent
 from qtpy.QtWidgets import QApplication, QWidget
 
 from ndv._types import (
@@ -17,6 +16,8 @@ from ndv.views.bases._app import NDVApp
 if TYPE_CHECKING:
     from collections.abc import Callable
     from concurrent.futures import Future
+
+    from qtpy.QtGui import QKeyEvent
 
     from ndv.views.bases import ArrayView
     from ndv.views.bases._app import P, T
@@ -82,7 +83,6 @@ class QtAppWrap(NDVApp):
     def call_later(self, msec: int, func: Callable[[], None]) -> None:
         """Call `func` after `msec` milliseconds."""
         QTimer.singleShot(msec, Qt.TimerType.PreciseTimer, func)
-
 
 
 _QT_KEY_MAP: dict[int, KeyCode] = {

@@ -778,7 +778,7 @@ class WxArrayView(ArrayView):
         return view
 
     # TODO: Fix type
-    def add_histogram(self, channel: ChannelKey, widget: HistogramCanvas) -> None:
+    def add_histogram(self, channel: ChannelKey, widget: Histogram) -> None:
         if lut := self._luts.get(channel, None):
             # Add the histogram widget on the LUT
             lut._add_histogram(widget)

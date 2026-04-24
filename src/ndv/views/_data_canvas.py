@@ -252,7 +252,7 @@ class RectangularROI(EventedBase):
             if not (ray := view.to_ray(event.pos)):
                 return False
             if event.buttons & events.MouseButton.LEFT:
-                pos = np.array(ray.origin[:2])
+                pos = ray.origin[:2]
                 if viewer_model.interaction_mode == InteractionMode.CREATE_ROI:
                     self.rect_mesh.visible = True
                     self.bb = (
