@@ -29,6 +29,7 @@ _DEFAULT_KEYBINDINGS: dict[KeyBinding, Action] = {
     KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.LeftArrow)]): Action.STEP_BACKWARD,
     KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.UpArrow)]): Action.FOCUS_PREV_AXIS,
     KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.DownArrow)]): Action.FOCUS_NEXT_AXIS,
+    KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.Equal)]): Action.ZOOM_IN,
     KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.Equal, shift=True)]): Action.ZOOM_IN,
     KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.NumpadAdd)]): Action.ZOOM_IN,
     KeyBinding(parts=[SimpleKeyBinding(key=KeyCode.Minus)]): Action.ZOOM_OUT,

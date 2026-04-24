@@ -766,49 +766,15 @@ class ArrayViewer:
                     # Put the data in the scene
                     self._canvas.view.scene.add_child(img)
                     # Reset the view
+                    # Register the image as a lut view.
+                    stats = lut_ctrl.add_image(img, need_histogram=True)
+                    self._canvas.set_scales(self._resolved.visible_scales)
                     # FIXME: This was previously done in the canvas impls whenever a new
                     # image was added. We probably don't actually want to do this every
                     # time a new dataset is added.
                     self._canvas.reset_zoom()
-                    # Register the image as a lut view.
-                    stats = lut_ctrl.add_image(img, need_histogram=True)
             else:
                 stats = lut_ctrl.update_texture_data(data, need_histogram=True)
             if stats is not None and (hist := self._histograms.get(key, None)):
                 hist.set_data(stats.counts, stats.bin_edges)
         self._update_hover()
-
-    def _get_values_at_world_point(self, x: float, y: float) -> dict[ChannelKey, float]:
-        # TODO: handle 3D data
-        n_vis = len(self._resolved.visible_axes)
-        if n_vis != 2:  # pragma: no cover
-            return {}
-
-        # map world coordinates back to data pixel indices using scales
-        # world x corresponds to the fastest visible axis (last),
-        # world y corresponds to the second-fastest (second-to-last)
-        scales = self._resolved.visible_scales
-        if len(scales) >= 2:
-            sx, sy = scales[-1], scales[-2]
-            data_x = int(x / sx) if sx != 0 else int(x)
-            data_y = int(y / sy) if sy != 0 else int(y)
-        else:
-            data_x, data_y = int(x), int(y)
-
-        if data_x < 0 or data_y < 0:
-            return {}
-
-        values: dict[ChannelKey, float] = {}
-        for key, ctrl in self._lut_controllers.items():
-            if (value := ctrl.get_value_at_index((data_y, data_x))) is not None:
-                # Handle RGB
-                if key == "RGB" and isinstance(value, np.ndarray):
-                    values["R"] = value[0]
-                    values["G"] = value[1]
-                    values["B"] = value[2]
-                    if value.shape[0] > 3:
-                        values["A"] = value[3]
-                else:
-                    values[key] = cast("float", value)
-
-        return values

@@ -74,14 +74,14 @@ class DataCanvas:
                 self.view,
                 type="orthographic",
                 zoom_factor=0.9,
-                preserve_aspect_ratio=True,
+                letterbox=True,
             )
         elif isinstance(controller, Orbit):
             projections.zoom_to_fit(
                 self.view,
                 type="perspective",
                 zoom_factor=0.9,
-                preserve_aspect_ratio=True,
+                letterbox=True,
             )
             if bb := self.view.scene.bounding_box:
                 controller.center = np.mean(bb, axis=0)

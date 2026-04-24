@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Container, Hashable, Mapping, Sequence
 
     from ndv._types import AxisKey, ChannelKey
-    from ndv.views.bases._graphics._canvas import HistogramCanvas
+    from ndv.views._histogram import Histogram
 
 
 ToggleBtnEvent = cast("int", wx.EVT_TOGGLEBUTTON.typeId)  # type: ignore[attr-defined]
@@ -337,7 +337,7 @@ class WxLUTView(LUTView):
         super().__init__()
         self._wxwidget = wdg = _WxLUTWidget(parent, default_luts)
         self.channel = channel
-        self.histogram: HistogramCanvas | None = None
+        self.histogram: Histogram | None = None
         self._displayed = True  # whether shown in channel selector
 
         wdg.visible.Bind(wx.EVT_CHECKBOX, self._on_visible_changed)
@@ -410,7 +410,7 @@ class WxLUTView(LUTView):
         if hist := self.histogram:
             hist.set_range()
 
-    def _add_histogram(self, histogram: HistogramCanvas) -> None:
+    def _add_histogram(self, histogram: Histogram) -> None:
         widget = cast("wx.Window", histogram.frontend_widget())
 
         if (parent := widget.GetParent()) and parent is not self._wxwidget:
