@@ -51,11 +51,7 @@ if TYPE_CHECKING:
     from qtpy.QtGui import QIcon
 
     from ndv._types import AxisKey, ChannelKey
-    from ndv.views.bases._graphics._canvas import HistogramCanvas
-    from ndv.views.bases._graphics._canvas_elements import (
-        CanvasElement,
-        RectangularROIHandle,
-    )
+    from ndv.views._histogram import Histogram
 
 SLIDER_STYLE = """
 QSlider::groove:horizontal {
@@ -313,7 +309,7 @@ class QLUTView(LUTView):
         super().__init__()
         self._qwidget = _QLUTWidget(default_luts)
         self._channel = channel
-        self.histogram: HistogramCanvas | None = None
+        self.histogram: Histogram | None = None
         # TODO: use emit_fast
         self._qwidget.histogram_btn.toggled.connect(self._on_q_histogram_toggled)
         self._qwidget.hist_log.toggled.connect(self._on_log_btn_toggled)
@@ -434,7 +430,7 @@ class QLUTView(LUTView):
         if hist := self.histogram:
             hist.set_range()
 
-    def _add_histogram(self, histogram: HistogramCanvas) -> None:
+    def _add_histogram(self, histogram: Histogram) -> None:
         # Add widget to view
         self.histogram = histogram
         widget = cast("QWidget", histogram.frontend_widget())
@@ -737,8 +733,6 @@ class _QArrayViewer(QWidget):
         self.set_range_btn = QPushButton(set_range_icon, "", self)
 
         # button to draw ROIs
-        self._roi_handle: RectangularROIHandle | None = None
-        self._selection: CanvasElement | None = None
         self.add_roi_btn = ROIButton()
 
         self.luts = _UpCollapsible(
@@ -858,7 +852,7 @@ class QtArrayView(ArrayView):
     def _on_channel_mode_changed(self, text: str) -> None:
         self.channelModeChanged.emit(ChannelMode(text))
 
-    def add_histogram(self, channel: ChannelKey, widget: HistogramCanvas) -> None:
+    def add_histogram(self, channel: ChannelKey, widget: Histogram) -> None:
         if lut := self._luts.get(channel, None):
             lut._add_histogram(widget)
 

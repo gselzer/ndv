@@ -264,6 +264,7 @@ def test_array_viewer_with_app() -> None:
     viewer.display_model.visible_axes = (0, -2, -1)
     visax_mock.assert_called_once()
     assert viewer.display_model.visible_axes == (0, -2, -1)
+    viewer.close()
 
 
 @pytest.mark.usefixtures("any_app")
@@ -314,6 +315,7 @@ def test_array_viewer_histogram() -> None:
     histogram.set_data(counts, bin_edges)
 
     histogram.close()
+    viewer.close()
 
 
 @pytest.mark.allow_leaks
@@ -618,3 +620,4 @@ def test_handle_gc_on_data_reassign() -> None:
     gc.collect()
 
     assert handle_ref() is None
+    viewer.close()

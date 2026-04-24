@@ -235,6 +235,7 @@ class ArrayViewer:
     def close(self) -> None:
         """Close the viewer."""
         self._disconnect_key_events()
+        self._canvas._canvas.set_event_filter(None)
         self._view.set_visible(False)
 
     def clone(self) -> ArrayViewer:
