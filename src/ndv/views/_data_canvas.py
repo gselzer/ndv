@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from psygnal import Signal
+
 if TYPE_CHECKING:
     from ndv.models._viewer_model import ArrayViewerModel
 
@@ -33,7 +35,10 @@ from scenex.utils import projections
 
 
 class DataCanvas:
-    def __init__(self) -> None:
+    eventCaptured = Signal(events.Event)
+
+    def __init__(self, viewer_model: ArrayViewerModel) -> None:
+        self.viewer_model = viewer_model
         # We have one view
         self.view = View(
             scene=Scene(interactive=True),
@@ -43,8 +48,26 @@ class DataCanvas:
         # On a canvas
         self._canvas = Canvas(width=600, height=600, views=[self.view], visible=True)
 
+        self.roi_view = RectangularROI()
+        self.roi_view.rect_mesh.visible = False
+        self.roi_view.rect_mesh.parent = self.view.scene
+
         # Showing two dimensions
         self.ndims = 2
+
+        self._canvas.set_event_filter(self._on_event)
+
+    def _on_event(self, event: events.Event) -> bool:
+        """Filter events from the canvas and re-emit them as a signal."""
+        if self.roi_view.handle_event(
+            event,
+            self.view,
+            self._canvas,
+            self.viewer_model,
+        ):
+            return True
+        self.eventCaptured.emit(event)
+        return False  # don't consume the event, allow normal processing to continue
 
     def widget(self) -> Any:
         return get_adaptor_registry().get_adaptor(self._canvas)._snx_get_native()

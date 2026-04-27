@@ -28,7 +28,7 @@ from ndv.models._resolve import (
 from ndv.models._roi_model import RectangularROIModel
 from ndv.models._viewer_model import ArrayViewerModel, InteractionMode
 from ndv.views import _app
-from ndv.views._data_canvas import DataCanvas, RectangularROI
+from ndv.views._data_canvas import DataCanvas
 from ndv.views._histogram import Histogram
 
 if TYPE_CHECKING:
@@ -119,13 +119,16 @@ class ArrayViewer:
 
         # get and create the front-end and canvas classes
         frontend_cls = _app.get_array_view_class()
-        self._canvas = DataCanvas()
-        self._canvas._canvas.set_event_filter(self._view_event)
+        self._canvas = DataCanvas(self._viewer_model)
+        # NOTE that by receiving events through a signal, we do not provide the canvas
+        # with a strong reference to this controller. This helps avoid reference cycles
+        # preventing garbage collection. The tradeoff, though, is that we cannot consume
+        # events at this point. If future needs require event consumption, we may need
+        # to switch approaches.
+        self._canvas.eventCaptured.connect(self._view_event)
+        self._canvas.roi_view.events.bb.connect(self._on_roi_view_bounding_box_changed)
 
-        self._roi_model = RectangularROIModel(visible=False)
-        self._roi_view: RectangularROI = RectangularROI()
-        self._roi_view.rect_mesh.visible = False
-        self._roi_view.rect_mesh.parent = self._canvas.view.scene
+        self._roi_model: RectangularROIModel | None = None
 
         # TODO: Is this necessary?
         self._histograms: dict[ChannelKey, Histogram] = {}
@@ -142,9 +145,6 @@ class ArrayViewer:
         self._view.ndimToggleRequested.connect(self._on_view_ndim_toggle_requested)
 
         self._focused_slider_axis: AxisKey | None = None
-        self._disconnect_key_events = _app.filter_key_events(
-            self._view.frontend_widget(), self._view
-        )
 
         if self._data_wrapper is not None:
             self._fully_synchronize_view()
@@ -234,7 +234,6 @@ class ArrayViewer:
 
     def close(self) -> None:
         """Close the viewer."""
-        self._disconnect_key_events()
         self._canvas._canvas.set_event_filter(None)
         self._view.set_visible(False)
 
@@ -359,12 +358,6 @@ class ArrayViewer:
         ]:
             getattr(obj, _connect)(callback)
 
-        if _connect:
-            self._create_roi_view()
-        else:
-            if self._roi_view:
-                self._roi_view.remove()
-
     # ------------------ Resolve / Apply ------------------
 
     def _re_resolve(self) -> None:
@@ -479,42 +472,34 @@ class ArrayViewer:
     def _on_roi_model_bounding_box_changed(
         self, bb: tuple[tuple[float, float], tuple[float, float]]
     ) -> None:
-        if self._roi_view is not None:
-            self._roi_view.bb = bb
+        if self._canvas.roi_view is not None:
+            self._canvas.roi_view.bb = bb
 
     def _on_roi_model_visible_changed(self, visible: bool) -> None:
-        if self._roi_view is not None:
-            self._roi_view.rect_mesh.visible = visible
+        if self._canvas.roi_view is not None:
+            self._canvas.roi_view.rect_mesh.visible = visible
 
     def _on_interaction_mode_changed(self, mode: InteractionMode) -> None:
         if mode == InteractionMode.CREATE_ROI:
-            self._roi_view.rect_mesh.visible = False
+            self._canvas.roi_view.rect_mesh.visible = False
 
     # def _create_roi_view(self) -> None:
     #     # Remove old ROI view
     #     # TODO: Enable multiple ROIs
-    #     if self._roi_view:
-    #         self._roi_view.remove()
+    #     if self._canvas.roi_view:
+    #         self._canvas.roi_view.remove()
 
     #     # Create new ROI view
-    #     self._roi_view = self._canvas.add_bounding_box()
+    #     self._canvas.roi_view = self._canvas.add_bounding_box()
     #     # Connect view signals
-    #     self._roi_view.boundingBoxChanged.connect(
+    #     self._canvas.roi_view.boundingBoxChanged.connect(
     #         self._on_roi_view_bounding_box_changed
     #     )
-    def _view_event(self, event: events.Event) -> bool:
+    def _view_event(self, event: events.Event) -> None:
         """Respond to user events, delegating to focused sub-handlers."""
-        if self._roi_view.handle_event(
-            event,
-            self._canvas.view,
-            self._canvas._canvas,
-            self._viewer_model,
-        ):
-            return True
         self._hover_event(event)
         if isinstance(event, events.KeyPressEvent):
             handle_key_press(event, self)
-        return False
 
     def _hover_event(self, event: events.Event) -> None:
         """Update hover info and cursor based on mouse position."""
@@ -614,7 +599,7 @@ class ArrayViewer:
         self, bb: tuple[tuple[float, float], tuple[float, float]]
     ) -> None:
         if self._roi_model:
-            self._roi_model.bb = bb
+            self._roi_model.bounding_box = bb
 
     def _on_key_pressed(self, event: KeyPressEvent) -> None:
         handle_key_press(event, self)
@@ -777,5 +762,6 @@ class ArrayViewer:
             else:
                 stats = lut_ctrl.update_texture_data(data, need_histogram=True)
             if stats is not None and (hist := self._histograms.get(key, None)):
-                hist.set_data(stats.counts, stats.bin_edges)
+                if stats.counts is not None and stats.bin_edges is not None:
+                    hist.set_data(stats.counts, stats.bin_edges)
         self._update_hover()
